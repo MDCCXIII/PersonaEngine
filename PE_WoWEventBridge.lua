@@ -28,6 +28,8 @@ local UnitHealthMax             = UnitHealthMax
 local UnitIsAFK                 = UnitIsAFK
 local UnitGUID                  = UnitGUID
 local CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo
+local UnitIsUnit 				= UnitIsUnit
+
 
 ----------------------------------------------------
 -- Runtime container
@@ -57,6 +59,15 @@ f:RegisterEvent("CHAT_MSG_MONSTER_SAY")
 f:RegisterEvent("CHAT_MSG_MONSTER_YELL")
 f:RegisterEvent("PLAYER_FLAGS_CHANGED")
 f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+
+-- NEW: events used for activity tracking
+f:RegisterEvent("PLAYER_STARTED_MOVING")
+f:RegisterEvent("PLAYER_TARGET_CHANGED")
+f:RegisterEvent("UNIT_SPELLCAST_SENT")
+f:RegisterEvent("CHAT_MSG_SAY")
+f:RegisterEvent("CHAT_MSG_YELL")
+f:RegisterEvent("CHAT_MSG_PARTY")
+f:RegisterEvent("CHAT_MSG_GUILD")
 
 ----------------------------------------------------
 -- Idle scheduler: random CHARACTER_IDLE musings
