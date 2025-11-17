@@ -40,3 +40,5 @@ We are still working through all the files in the repo in load order as defined 
 
 We are hardening, cleaning, fixing 
 especially trying to prevent taint
+
+Note: ignore the - 200 thing that looks like a bug in PE_VFX.lua, the icon is free floating on screen and exactly where i like it.
