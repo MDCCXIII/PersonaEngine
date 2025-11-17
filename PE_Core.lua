@@ -43,24 +43,36 @@ end
 -- cfg is optional; if provided, its .enabled flag is honored.
 
 function PE.CanSpeak(cfg)
-    -- Master SR toggle
-    if SR_On ~= 1 then
-        return false
-    end
+    if SR_On ~= 1 then return false end
 
-    -- Hard mute while AFK: no persona speech of any kind
     local rt = PE.Runtime
-    if rt and rt._isAFK then
-        return false
+
+    -- Hard AFK gate
+    if rt and rt._isAFK then return false end
+
+    -- AFK exit cooldown
+    if rt and rt._afkReleaseAt and rt._afkReleaseAt > 0 then
+        local now = GetTime()
+        if now < rt._afkReleaseAt then
+            return false
+        end
     end
 
-    -- Optional per-spell / per-event disable
-    if cfg and cfg.enabled == false then
-        return false
+    -- Soft idle mute: if no activity in N seconds, be quiet
+    local idleTimeout = 45  -- seconds; later we can make this configurable
+    if rt and rt.lastActivityAt and idleTimeout > 0 then
+        local now = GetTime()
+        if (now - rt.lastActivityAt) > idleTimeout then
+            return false
+        end
     end
+
+    if cfg and cfg.enabled == false then return false end
 
     return true
 end
+
+
 
 ----------------------------------------------------
 -- Persona Engine - Channel Resolver

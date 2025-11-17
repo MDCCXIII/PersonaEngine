@@ -39,6 +39,8 @@ Runtime.state      = Runtime.state      or "idle"
 Runtime.cooldowns  = Runtime.cooldowns  or {}
 Runtime._wasAFK    = Runtime._wasAFK    or false
 Runtime._isAFK     = Runtime._isAFK     or false
+Runtime._afkReleaseAt = Runtime._afkReleaseAt or 0
+Runtime.lastActivityAt = Runtime.lastActivityAt or GetTime()
 
 ----------------------------------------------------
 -- Event frame
@@ -66,6 +68,15 @@ local function Persona_ScheduleNextIdle()
     local now = GetTime()
     -- random interval between 90s (1.5min) and 600s (10min)
     idleNextAt = now + math.random(90, 600)
+end
+
+----------------------------------------------------
+-- Activity tracker: called whenever we know the
+-- player did something “real” (moved, cast, etc.)
+----------------------------------------------------
+local function Persona_RegisterActivity()
+    local now = GetTime()
+    Runtime.lastActivityAt = now
 end
 
 -- Schedule first idle window after load; we’ll reset again on login.
@@ -113,19 +124,25 @@ local function HandleAFKChange()
     local isAFK  = UnitIsAFK("player") and true or false
     local wasAFK = Runtime._isAFK or false
 
-    -- Update flags FIRST so PE.CanSpeak sees AFK correctly
+    -- Update flags so PE.CanSpeak sees the correct state
     Runtime._isAFK  = isAFK
     Runtime._wasAFK = isAFK
 
-    -- Optional: only fire AFK_WARNING on first enter
     if isAFK and not wasAFK then
+        -- NOT AFK → AFK: hard mute, clear any cooldown
+        Runtime._afkReleaseAt = 0
+
+        -- Optional: AFK_WARNING event (muted anyway while _isAFK)
         if Runtime.TriggerEvent then
-            Runtime.TriggerEvent("AFK_WARNING", {
-                cfg = nil,  -- placeholder in case you later add per-event cfg
-            })
+            Runtime.TriggerEvent("AFK_WARNING", {})
         end
+
+    elseif (not isAFK) and wasAFK then
+        -- AFK → NOT AFK: start a short “no talking” window
+        Runtime._afkReleaseAt = GetTime() + 2
     end
 end
+
 
 
 ----------------------------------------------------
@@ -133,6 +150,42 @@ end
 ----------------------------------------------------
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
+        Persona_OnLogin()
+        Persona_RegisterActivity()
+
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        Runtime.state = "combat"
+        Persona_RegisterActivity()
+
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        Runtime.state = "idle"
+        Persona_RegisterActivity()
+
+    elseif event == "PLAYER_STARTED_MOVING" then
+        Persona_RegisterActivity()
+
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        Persona_RegisterActivity()
+
+    elseif event == "UNIT_SPELLCAST_SENT" then
+        local unit = ...
+        if unit == "player" then
+            Persona_RegisterActivity()
+        end
+
+    elseif event == "CHAT_MSG_SAY"
+        or event == "CHAT_MSG_YELL"
+        or event == "CHAT_MSG_PARTY"
+        or event == "CHAT_MSG_GUILD"
+        or event == "CHAT_MSG_WHISPER" then
+
+        local msg, sender = ...
+        if sender and UnitIsUnit(sender, "player") then
+            Persona_RegisterActivity()
+        end
+    end
+	
+	if event == "PLAYER_LOGIN" then
         -- Seed state on login
         if Runtime.SetState then
             if UnitAffectingCombat("player") then
