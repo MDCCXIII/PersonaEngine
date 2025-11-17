@@ -1,53 +1,30 @@
 -- PE_Chat.lua
--- Chat reaction engine for Persona Engine
-
-local PE = PE          -- global table provided by PE_Globals.lua
 local MODULE = "Chat"
+PE.LogLoad(MODULE)
 
-if PE and PE.LogLoad then
-    PE.LogLoad(MODULE)
+local PE = PE
+if not PE then
+    print("|cffff0000[PersonaEngine] PE_Chat.lua loaded without PE core!|r")
+    return
 end
 
-------------------------------------------------
--- Local API references (perf + safety)
-------------------------------------------------
-local CreateFrame      = CreateFrame
-local UnitName         = UnitName
-local SendChatMessage  = SendChatMessage
-local math_random      = math.random
-local string_match     = string.match
+-- Local handle to profile system (if available)
+local Profiles = PE.Profiles
 
-------------------------------------------------
--- Frame + events
-------------------------------------------------
-local chatFrame = CreateFrame("Frame", "PersonaEngineChatFrame")
-
-chatFrame:RegisterEvent("CHAT_MSG_SAY")
-chatFrame:RegisterEvent("CHAT_MSG_YELL")
-chatFrame:RegisterEvent("CHAT_MSG_PARTY")
-chatFrame:RegisterEvent("CHAT_MSG_RAID")
-chatFrame:RegisterEvent("CHAT_MSG_GUILD")
-chatFrame:RegisterEvent("CHAT_MSG_WHISPER")
-
-chatFrame:RegisterEvent("CHAT_MSG_MONSTER_SAY")
-chatFrame:RegisterEvent("CHAT_MSG_MONSTER_YELL")
-chatFrame:RegisterEvent("CHAT_MSG_MONSTER_EMOTE")
+local f = CreateFrame("Frame", "PersonaEngineChatFrame")
+f:RegisterEvent("CHAT_MSG_SAY")
+f:RegisterEvent("CHAT_MSG_YELL")
+f:RegisterEvent("CHAT_MSG_PARTY")
+f:RegisterEvent("CHAT_MSG_RAID")
+f:RegisterEvent("CHAT_MSG_GUILD")
+f:RegisterEvent("CHAT_MSG_WHISPER")
+f:RegisterEvent("CHAT_MSG_MONSTER_SAY")
+f:RegisterEvent("CHAT_MSG_MONSTER_YELL")
+f:RegisterEvent("CHAT_MSG_MONSTER_EMOTE")
 
 local playerName = UnitName("player")
 
-------------------------------------------------
--- Helpers
-------------------------------------------------
-local function GetShortName(fullName)
-    if not fullName then
-        return nil
-    end
-    -- Strip realm suffix; fall back to original if no match
-    local short = string_match(fullName, "([^%-]+)")
-    return short or fullName
-end
-
-local function mapEventToProfileKey(event)
+local function mapEventToProfileKey(event, msg, author, ...)
     if event == "CHAT_MSG_SAY" then
         return "SAY"
     elseif event == "CHAT_MSG_YELL" then
@@ -67,121 +44,79 @@ local function mapEventToProfileKey(event)
     elseif event == "CHAT_MSG_MONSTER_EMOTE" then
         return "NPC_EMOTE"
     end
-    return nil
 end
 
-------------------------------------------------
--- Core handler
-------------------------------------------------
 local function PersonaEngine_HandleChatEvent(self, event, msg, author, ...)
-    -- Guard: core table / permission helper must exist
+    -- Respect global mute
     if not PE or not PE.CanSpeak or not PE.CanSpeak() then
         return
     end
 
-    -- Don't react to our own chat (except monsters, which aren't us anyway)
-    local shortAuthor = GetShortName(author)
-    if shortAuthor == playerName and not string_match(event or "", "MONSTER") then
+    -- Don't react to our own speeches (unless we decide otherwise later)
+    local shortAuthor = author and author:match("([^%-]+)")
+    if shortAuthor == playerName and not event:match("MONSTER") then
         return
     end
 
-    -- Profiles are owned by the core; if missing, bail quietly
-    if not PersonaEngine_GetActiveProfile then
-        return
+    -- Get active profile via namespaced API first, then optional legacy global
+    local profile
+    if Profiles and Profiles.GetActiveProfile then
+        profile = Profiles.GetActiveProfile()
+    elseif _G.PersonaEngine_GetActiveProfile then
+        profile = _G.PersonaEngine_GetActiveProfile()
     end
 
-    local profile = PersonaEngine_GetActiveProfile()
     if not profile or not profile.chatReactions then
         return
     end
 
-    local key = mapEventToProfileKey(event)
+    local key = mapEventToProfileKey(event, msg, author, ...)
     if not key then
         return
     end
 
     local cfg = profile.chatReactions[key]
-    if not cfg then
-        return
-    end
-
-    local phrases = cfg.phrases
-    if type(phrases) ~= "table" or #phrases == 0 then
-        return
-    end
-
-    local chance = tonumber(cfg.chance) or 10
-    if chance < 1 then
-        -- Degenerate config; never trigger instead of spamming
+    if not cfg or not cfg.phrases or #cfg.phrases == 0 then
         return
     end
 
     local channel = cfg.channel or key
+    local chance  = cfg.chance or 10
 
-    ------------------------------------------------
-    -- Special case: reply to whispers
-    ------------------------------------------------
+    -- Special case: whisper replies
     if key == "WHISPER_IN" and cfg.reply and event == "CHAT_MSG_WHISPER" then
         local target = shortAuthor
         if not target then
             return
         end
-
-        if math_random(chance) ~= 1 then
+        if math.random(chance) ~= 1 then
             return
         end
 
-        local phrase = phrases[math_random(#phrases)]
-
-        -- Optional inflection pass
+        local phrase = cfg.phrases[math.random(#cfg.phrases)]
         if PE.InflectMaybe then
-            phrase = PE.InflectMaybe(phrase, "CHAT_WHISPER_REPLY", nil, {
-                sender  = target,
-                message = msg,
-            })
+            phrase = PE.InflectMaybe(phrase, "CHAT_WHISPER_REPLY", nil, { sender = target })
         end
 
-        if phrase and phrase ~= "" then
-            -- Direct whisper reply bypasses SR wrapper
-            SendChatMessage(phrase, "WHISPER", nil, target)
-        end
+        -- Direct whisper needs a target; we use the base API here.
+        SendChatMessage(phrase, "WHISPER", nil, target)
         return
     end
 
-    ------------------------------------------------
     -- Normal outward reactions (SAY, YELL, PARTY, etc.)
-    ------------------------------------------------
-    if not SR then
-        -- SR engine not available; fail gracefully
-        return
-    end
-
     SR({
         chance  = chance,
-        phr     = phrases,
+        phr     = cfg.phrases,
         channel = channel,
         eventId = "CHAT_REACTION_" .. key,
-        ctx     = {
-            sender  = shortAuthor,
-            message = msg,
-        },
+        ctx     = { sender = shortAuthor, message = msg },
     })
 end
 
-chatFrame:SetScript("OnEvent", PersonaEngine_HandleChatEvent)
+f:SetScript("OnEvent", PersonaEngine_HandleChatEvent)
 
-------------------------------------------------
--- Module registration
-------------------------------------------------
-if PE then
-    if PE.LogInit then
-        PE.LogInit(MODULE)
-    end
-
-    if PE.RegisterModule then
-        PE.RegisterModule("Chat", {
-            name  = "Chat Reactions",
-            class = "engine",
-        })
-    end
-end
+PE.LogInit(MODULE)
+PE.RegisterModule("Chat", {
+    name  = "Chat Reactions",
+    class = "engine",
+})
