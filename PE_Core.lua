@@ -1,12 +1,13 @@
 -- Persona Engine core
+
 local MODULE = "Core"
 PE.LogLoad(MODULE)
 
 -- Expects these globals from PE_Globals.lua:
---   SR_On  -- 1 = speech enabled, 0 = muted
---   lastP  -- last phrase spoken (for de-dupe)
---   P      -- phrase pieces table
---   PE     -- addon namespace table
+-- SR_On   - 1 = speech enabled, 0 = muted
+-- lastP   - last phrase spoken (for de-dupe)
+-- P       - phrase pieces table
+-- PE      - addon namespace table
 
 ----------------------------------------------------
 -- Persona Engine - Chat Rate Limiter
@@ -14,12 +15,11 @@ PE.LogLoad(MODULE)
 -- Prevents addon-driven messages from tripping WoW's
 -- chat throttle.
 
-local RATE_WINDOW   = 8    -- seconds in a sliding window
-local RATE_MAX_MSGS = 5    -- max messages allowed in that window
+local RATE_WINDOW   = 8   -- seconds in a sliding window
+local RATE_MAX_MSGS = 5   -- max messages allowed in that window
 
 local function PE_CanSendMessage()
     local now = GetTime()
-
     PE._rateState = PE._rateState or { windowStart = 0, count = 0 }
     local st = PE._rateState
 
@@ -43,12 +43,22 @@ end
 -- cfg is optional; if provided, its .enabled flag is honored.
 
 function PE.CanSpeak(cfg)
+    -- Master SR toggle
     if SR_On ~= 1 then
         return false
     end
+
+    -- Hard mute while AFK: no persona speech of any kind
+    local rt = PE.Runtime
+    if rt and rt._isAFK then
+        return false
+    end
+
+    -- Optional per-spell / per-event disable
     if cfg and cfg.enabled == false then
         return false
     end
+
     return true
 end
 
@@ -108,10 +118,13 @@ end
 ----------------------------------------------------
 
 local function PE_SelectLine(pool)
-    if not pool or #pool == 0 then return nil end
+    if not pool or #pool == 0 then
+        return nil
+    end
 
     local line = pool[math.random(#pool)]
 
+    -- Simple de-dupe if the pool has variety
     if #pool > 1 and line == lastP then
         line = pool[math.random(#pool)]
     end
@@ -124,13 +137,15 @@ end
 -- Persona Engine - Unified Send Helper
 ----------------------------------------------------
 -- opts:
---   opts.cfg            -- optional spell config (for .enabled)
---   opts.bypassResolve  -- true = don't remap channel (used by FireBubble)
---   opts.eventId        -- optional abstract event id for inflection context
---   opts.ctx            -- optional context table for inflection
+--   opts.cfg           - optional spell config (for .enabled)
+--   opts.bypassResolve - true = don't remap channel (used by FireBubble)
+--   opts.eventId       - optional abstract event id for inflection context
+--   opts.ctx           - optional context table for inflection
 
 local function PE_SendPersonaMessage(text, channel, opts)
-    if not text or text == "" then return end
+    if not text or text == "" then
+        return
+    end
 
     if not PE.CanSpeak(opts and opts.cfg) then
         return
@@ -159,7 +174,7 @@ local function PE_SendPersonaMessage(text, channel, opts)
         -- Soft-fail to default chat, but do not raise an error
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage(
-                "|cffff0000[Persona] SendChatMessage failed:|r "..tostring(err)
+                "|cffff0000[Persona] SendChatMessage failed:|r " .. tostring(err)
             )
         end
     end
@@ -171,10 +186,11 @@ PE.SendPersonaMessage = PE_SendPersonaMessage
 ----------------------------------------------------
 -- Persona Engine — Core SR Logic
 ----------------------------------------------------
--- Classic "Say Random" function, used by macros / hooks.
 
 function SR(a)
-    if not a then return end
+    if not a then
+        return
+    end
 
     local chan   = a.channel or "SAY"
     local chance = a.chance or 10
@@ -193,7 +209,9 @@ function SR(a)
     end
 
     local line = PE.SelectLine and PE.SelectLine(pool) or PE_SelectLine(pool)
-    if not line then return end
+    if not line then
+        return
+    end
 
     PE_SendPersonaMessage(line, chan, {
         eventId = a.eventId or "SR_MACRO",
@@ -214,10 +232,14 @@ function SetP(i, t)
 end
 
 function SpeakP(c, h, n)
-    if not PE.CanSpeak() then return end
+    if not PE.CanSpeak() then
+        return
+    end
 
     c = c or 10
-    if math.random(c) ~= 1 then return end
+    if math.random(c) ~= 1 then
+        return
+    end
 
     h = h or "SAY"
     n = n or 2
@@ -254,7 +276,6 @@ local function PE_SchedulePersonaMessage(text, channel, opts, delay)
         if PE.CanSpeak and not PE.CanSpeak(o and o.cfg) then
             return
         end
-
         PE_SendPersonaMessage(l, ch, o)
     end)
 end
@@ -273,11 +294,18 @@ end
 --   nil                     → use cfg.reactionChance (if present)
 
 function PE.FireBubble(spellID, isReactionOverride)
-    if not spellID then return end
-    if not PersonaEngineDB or not PersonaEngineDB.spells then return end
+    if not spellID then
+        return
+    end
+
+    if not PersonaEngineDB or not PersonaEngineDB.spells then
+        return
+    end
 
     local cfg = PersonaEngineDB.spells[spellID]
-    if not cfg then return end
+    if not cfg then
+        return
+    end
 
     -- Global + per-spell enable flags
     if not PE.CanSpeak(cfg) then
@@ -286,7 +314,9 @@ function PE.FireBubble(spellID, isReactionOverride)
 
     -- Chance check
     local chance = cfg.chance or 10
-    if chance < 1 then chance = 1 end
+    if chance < 1 then
+        chance = 1
+    end
     if math.random(chance) ~= 1 then
         return
     end
@@ -340,7 +370,9 @@ function PE.FireBubble(spellID, isReactionOverride)
         -- Force reaction-style delay
         local minD = cfg.reactionDelayMin or 1.0
         local maxD = cfg.reactionDelayMax or 2.5
-        if maxD < minD then maxD = minD end
+        if maxD < minD then
+            maxD = minD
+        end
         delay = minD + math.random() * (maxD - minD)
     elseif isReactionOverride == false then
         delay = 0
@@ -350,23 +382,31 @@ function PE.FireBubble(spellID, isReactionOverride)
         if rc > 0 and math.random() < rc then
             local minD = cfg.reactionDelayMin or 1.0
             local maxD = cfg.reactionDelayMax or 2.5
-            if maxD < minD then maxD = minD end
+            if maxD < minD then
+                maxD = minD
+            end
             delay = minD + math.random() * (maxD - minD)
         end
     end
 
     -- FireBubble bypasses resolver so macros can use true SAY/YELL/etc.
-    PE_SchedulePersonaMessage(line, channel, {
-        cfg           = cfg,
-        bypassResolve = true,
-        eventId       = eventId,
-        ctx           = ctx,
-    }, delay)
+    PE_SchedulePersonaMessage(
+        line,
+        channel,
+        {
+            cfg          = cfg,
+            bypassResolve = true,
+            eventId      = eventId,
+            ctx          = ctx,
+        },
+        delay
+    )
 end
 
 ----------------------------------------------------
 -- Module registration
 ----------------------------------------------------
+
 PE.LogInit(MODULE)
 PE.RegisterModule("Core", {
     name  = "Core Systems",
