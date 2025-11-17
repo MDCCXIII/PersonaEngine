@@ -1,0 +1,52 @@
+## Interface: 110205
+## Title: Persona Engine
+## Notes: Copporclang's personality core
+## Author: Tasu Copporclang
+## Version: 1.0
+## IconTexture: Interface\AddOns\PersonaEngine\references\persona.tga
+## SavedVariables: PersonaEngineDB
+## OptionalDeps: LibDataBroker-1.1, LibDBIcon-1.0
+
+# Core namespace + logging + globals
+PE_Globals.lua
+PE_Core.lua
+PE_Taint.lua
+
+# Text / language systems
+PE_Phrases.lua
+PE_SentenceStructures.lua
+PE_Inflections.lua
+PE_DynamicPhrases.lua
+
+# Event/state engine
+PE_EventCatalog.lua
+PE_StateCatalog.lua
+PE_EventConfig.lua
+PE_EventEngine.lua
+PE_WoWEventBridge.lua
+
+# Spells & hooks
+PE_SpellDB.lua
+PE_SpellHooks.lua
+
+# Profiles / character-specific defaults
+PE_Profiles.lua
+PE_Profile_Copporclang.lua
+
+# Visuals / icon / FX
+PE_VFX.lua
+PE_Icon.lua
+
+# Panels / UI
+PE_Cloud9_Panel.lua
+PE_ConfigUI.lua
+
+# Perf tools (optional but early enough for hooks)
+PE_Perf.lua
+
+# Chat reactions + slash commands
+PE_Chat.lua
+PE_Slash.lua
+
+# Experimental playground (last, so it can hook into everything)
+PE_Experimental.lua

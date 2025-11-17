@@ -1,0 +1,8 @@
+Not Enabled:
+TradeSkillMaster
+Titan Panel[_classic_]
+Details! Damage Meter
+GatherMate2Data
+HandyNotes
+MogIt
+WeakAuras
