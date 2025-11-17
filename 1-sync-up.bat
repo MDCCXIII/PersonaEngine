@@ -11,22 +11,40 @@ echo.
 echo 🔧 Staging all changes...
 git add -A
 
-REM Build pretty timestamp: YYYY-MM-DD HH:MM
+REM ===== Timestamp builder (YYYY-Mon-DD HH:MM) =====
+setlocal enabledelayedexpansion
+
+REM Parse date (MM/DD/YYYY depending on locale)
 for /f "tokens=1-3 delims=/- " %%a in ("%date%") do (
-    set yyyy=%%c
     set mm=%%a
     set dd=%%b
+    set yyyy=%%c
 )
 
+REM Parse time (HH:MM:SS.xx)
 for /f "tokens=1-3 delims=:." %%h in ("%time%") do (
     set hh=%%h
     set nn=%%i
-    REM If hour has leading space (before 10AM), fix it
     if "!hh:~0,1!"==" " set hh=0!hh:~1!
 )
 
-set "STAMP=%yyyy%-%mm%-%dd% %hh%:%nn%"
+REM Convert month number → short name
+set mn=
+if "%mm%"=="01" set mn=Jan
+if "%mm%"=="02" set mn=Feb
+if "%mm%"=="03" set mn=Mar
+if "%mm%"=="04" set mn=Apr
+if "%mm%"=="05" set mn=May
+if "%mm%"=="06" set mn=Jun
+if "%mm%"=="07" set mn=Jul
+if "%mm%"=="08" set mn=Aug
+if "%mm%"=="09" set mn=Sep
+if "%mm%"=="10" set mn=Oct
+if "%mm%"=="11" set mn=Nov
+if "%mm%"=="12" set mn=Dec
 
+set "STAMP=%yyyy%-%mn%-%dd% %hh%:%nn%"
+endlocal & set "STAMP=%STAMP%"
 
 echo.
 echo 📝 Committing (if there are changes)...
