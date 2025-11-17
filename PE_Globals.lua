@@ -74,12 +74,31 @@ PE.Log(4, ("|cff00ff88[PersonaEngine]|r Loading %s ..."):format(MODULE))
 -- Expected module list (lint)
 ----------------------------------------------------
 PE.ExpectedModules = {
-    "Globals","Core","Icon","Profiles","Profile_Copporclang","Slash",
-    "VFX","Cloud9","Chat","SpellDB","SpellHooks",
-    "Inflections","Phrases","Sentences",
-    "EventCatalog","StateCatalog","EventConfig",
-    "EventEngine","EventBridge","DynamicPhrases","Experimental",
+    "Globals",
+    "Core",
+
+    "Icon",
+    "VFX",
+
+    "Profiles",
+    "Profile_Copporclang",
+
+    "SpellDB",
+    "SpellHooks",
+
+    "Inflections",
+    "Phrases",
+    "Sentences",
+    "DynamicPhrases",
+
+    "Cloud9",
+    "ConfigUI",
+
+    "Taint",
+    "Slash",
+    "Experimental",
 }
+
 
 ----------------------------------------------------
 -- Module Registry + Load Metadata

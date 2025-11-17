@@ -1,13 +1,12 @@
 -- Persona Engine core
-
 local MODULE = "Core"
 PE.LogLoad(MODULE)
 
 -- Expects these globals from PE_Globals.lua:
--- SR_On   - 1 = speech enabled, 0 = muted
--- lastP   - last phrase spoken (for de-dupe)
--- P       - phrase pieces table
--- PE      - addon namespace table
+-- SR_On  - 1 = speech enabled, 0 = muted
+-- lastP  - last phrase spoken (for de-dupe)
+-- P      - phrase pieces table
+-- PE     - addon namespace table
 
 ----------------------------------------------------
 -- Persona Engine - Chat Rate Limiter
@@ -15,8 +14,8 @@ PE.LogLoad(MODULE)
 -- Prevents addon-driven messages from tripping WoW's
 -- chat throttle.
 
-local RATE_WINDOW   = 8   -- seconds in a sliding window
-local RATE_MAX_MSGS = 5   -- max messages allowed in that window
+local RATE_WINDOW    = 8   -- seconds in a sliding window
+local RATE_MAX_MSGS  = 5   -- max messages allowed in that window
 
 local function PE_CanSendMessage()
     local now = GetTime()
@@ -41,44 +40,45 @@ end
 ----------------------------------------------------
 -- Central gate used by all speech paths.
 -- cfg is optional; if provided, its .enabled flag is honored.
+-- NOTE: Macro-only design: no AFK / idle runtime gating here.
 
 function PE.CanSpeak(cfg)
-    if SR_On ~= 1 then return false end
-
-    local rt = PE.Runtime
-
-    -- Hard AFK gate
-    if rt and rt._isAFK then return false end
-
-    -- AFK exit cooldown
-    if rt and rt._afkReleaseAt and rt._afkReleaseAt > 0 then
-        local now = GetTime()
-        if now < rt._afkReleaseAt then
-            return false
-        end
+    -- Global toggle (slash command, minimap button, etc.)
+    if SR_On ~= 1 then
+        return false
     end
 
-    -- Soft idle mute: if no activity in N seconds, be quiet
-    local idleTimeout = 45  -- seconds; later we can make this configurable
-    if rt and rt.lastActivityAt and idleTimeout > 0 then
-        local now = GetTime()
-        if (now - rt.lastActivityAt) > idleTimeout then
-            return false
-        end
+    -- Per-spell explicit disable
+    if cfg and cfg.enabled == false then
+        return false
     end
-
-    if cfg and cfg.enabled == false then return false end
 
     return true
 end
 
+----------------------------------------------------
+-- Macro State Helper (for FireBubble context)
+----------------------------------------------------
+-- Very simple: just "combat" vs "idle" for now.
+-- This never drives automatic speech, only informs
+-- phrase selection for macros.
 
+local function PE_GetMacroState()
+    if UnitAffectingCombat and UnitAffectingCombat("player") then
+        return "combat"
+    end
+    return "idle"
+end
+
+PE.GetMacroState = PE_GetMacroState
 
 ----------------------------------------------------
 -- Persona Engine - Channel Resolver
 ----------------------------------------------------
--- For automated/event-driven speech we route "unsafe" SAY/YELL
--- into group channels or EMOTE where appropriate.
+-- For automated/event-driven speech we *used* to remap
+-- SAY/YELL into safer channels. For macro-only chatter
+-- this is still useful for non-bubble SR() calls.
+-- FireBubble can explicitly bypass this resolver.
 
 local function PE_ResolveChannel(channel)
     channel = channel or "SAY"
@@ -111,11 +111,12 @@ local function PE_ResolveChannel(channel)
         return channel
     end
 
-    -- Solo: in combat, SAY/YELL from addons are flaky / partially protected.
-    -- In that specific case, fall back to EMOTE so Copporclang still
-    -- appears to react without causing blocked actions.
-    local inGroup  = IsInGroup() or IsInRaid()
-    local inCombat = UnitAffectingCombat("player")
+    -- Solo fallback: previously we tried to shield
+    -- automated combat SAY/YELL here. With macro-only
+    -- usage this is less critical, but we keep the
+    -- EMOTE safety for non-bubble SR() calls.
+    local inGroup   = IsInGroup() or IsInRaid()
+    local inCombat  = UnitAffectingCombat("player")
 
     if not inGroup and inCombat and (channel == "SAY" or channel == "YELL") then
         return "EMOTE"
@@ -192,7 +193,7 @@ local function PE_SendPersonaMessage(text, channel, opts)
     end
 end
 
--- Expose safe send helper to other modules (EventEngine, etc.)
+-- Expose safe send helper in case other systems need it
 PE.SendPersonaMessage = PE_SendPersonaMessage
 
 ----------------------------------------------------
@@ -200,9 +201,7 @@ PE.SendPersonaMessage = PE_SendPersonaMessage
 ----------------------------------------------------
 
 function SR(a)
-    if not a then
-        return
-    end
+    if not a then return end
 
     local chan   = a.channel or "SAY"
     local chance = a.chance or 10
@@ -284,7 +283,7 @@ local function PE_SchedulePersonaMessage(text, channel, opts, delay)
     local o  = opts
 
     C_Timer.After(delay, function()
-        -- Re-check speech permission at fire time in case user toggled things
+        -- Re-check speech permission at fire time
         if PE.CanSpeak and not PE.CanSpeak(o and o.cfg) then
             return
         end
@@ -303,21 +302,14 @@ end
 -- Optional 2nd arg:
 --   isReactionOverride = true  → always delayed “reaction”
 --   isReactionOverride = false → always immediate “action”
---   nil                     → use cfg.reactionChance (if present)
+--   nil → use cfg.reactionChance (if present)
 
 function PE.FireBubble(spellID, isReactionOverride)
-    if not spellID then
-        return
-    end
-
-    if not PersonaEngineDB or not PersonaEngineDB.spells then
-        return
-    end
+    if not spellID then return end
+    if not PersonaEngineDB or not PersonaEngineDB.spells then return end
 
     local cfg = PersonaEngineDB.spells[spellID]
-    if not cfg then
-        return
-    end
+    if not cfg then return end
 
     -- Global + per-spell enable flags
     if not PE.CanSpeak(cfg) then
@@ -333,15 +325,12 @@ function PE.FireBubble(spellID, isReactionOverride)
         return
     end
 
-    -- Choose channel (prioritize SAY, then YELL, then EMOTE, then first)
+    -- Choose channel (prioritize SAY, then YELL, then EMOTE, then first flag)
     local channel = "SAY"
     if cfg.channels and next(cfg.channels) then
-        if cfg.channels.SAY then
-            channel = "SAY"
-        elseif cfg.channels.YELL then
-            channel = "YELL"
-        elseif cfg.channels.EMOTE then
-            channel = "EMOTE"
+        if     cfg.channels.SAY   then channel = "SAY"
+        elseif cfg.channels.YELL  then channel = "YELL"
+        elseif cfg.channels.EMOTE then channel = "EMOTE"
         else
             for ch, on in pairs(cfg.channels) do
                 if on then
@@ -352,20 +341,30 @@ function PE.FireBubble(spellID, isReactionOverride)
         end
     end
 
-    -- Decide which phrase system to use
-    local line
-    local ctx     = cfg.ctx or {}
+    -- Build context with macro-state info
+    local baseCtx = cfg.ctx or {}
+    local ctx     = {}
+
+    for k, v in pairs(baseCtx) do
+        ctx[k] = v
+    end
+
+    local stateId = PE_GetMacroState and PE_GetMacroState() or "idle"
+    ctx.stateId   = stateId
+    ctx.spellID   = spellID
+    ctx.spellCfg  = cfg
+
     local eventId = cfg.eventId or ("BUBBLE_" .. tostring(spellID))
 
+    -- Decide which phrase system to use
+    local line
     if cfg.phraseKey and PE.Phrases and PE.Phrases.PickLine then
         -- Use the static+dynamic phrase engine
-        line = PE.Phrases.PickLine(cfg.phraseKey, ctx, nil, eventId)
+        line = PE.Phrases.PickLine(cfg.phraseKey, ctx, stateId, eventId)
     else
         -- Legacy per-spell phrase list
         local phrases = cfg.phrases
-        if not phrases or #phrases == 0 then
-            return
-        end
+        if not phrases or #phrases == 0 then return end
         line = PE_SelectLine(phrases)
     end
 
@@ -382,21 +381,19 @@ function PE.FireBubble(spellID, isReactionOverride)
         -- Force reaction-style delay
         local minD = cfg.reactionDelayMin or 1.0
         local maxD = cfg.reactionDelayMax or 2.5
-        if maxD < minD then
-            maxD = minD
-        end
+        if maxD < minD then maxD = minD end
         delay = minD + math.random() * (maxD - minD)
+
     elseif isReactionOverride == false then
         delay = 0
+
     else
         -- No override → probabilistic reaction
         local rc = cfg.reactionChance or 0
         if rc > 0 and math.random() < rc then
             local minD = cfg.reactionDelayMin or 1.0
             local maxD = cfg.reactionDelayMax or 2.5
-            if maxD < minD then
-                maxD = minD
-            end
+            if maxD < minD then maxD = minD end
             delay = minD + math.random() * (maxD - minD)
         end
     end
@@ -406,10 +403,10 @@ function PE.FireBubble(spellID, isReactionOverride)
         line,
         channel,
         {
-            cfg          = cfg,
+            cfg           = cfg,
             bypassResolve = true,
-            eventId      = eventId,
-            ctx          = ctx,
+            eventId       = eventId,
+            ctx           = ctx,
         },
         delay
     )
@@ -420,7 +417,4 @@ end
 ----------------------------------------------------
 
 PE.LogInit(MODULE)
-PE.RegisterModule("Core", {
-    name  = "Core Systems",
-    class = "core",
-})
+PE.RegisterModule("Core", { name = "Core Systems", class = "core", })
