@@ -1,64 +1,82 @@
+-- ##################################################
 -- PE_EventCatalog.lua
+-- Default event bindings per state -> SavedVariables
+-- ##################################################
+
+local PE = PE
+if not PE then
+    print("|cffff0000[PersonaEngine] PE_EventCatalog.lua loaded without PE core!|r")
+    return
+end
+
 local MODULE = "EventCatalog"
-PE.LogLoad(MODULE)
+if PE.LogLoad then
+    PE.LogLoad(MODULE)
+end
 
+local Config = PE.Config or {}
+PE.Config = Config
 
-local PE      = PE
-local Config  = PE.Config
-local Events  = PE.Events
-local States  = PE.States
-local Phrases = PE.Phrases
+local pairs = pairs
 
+-- State → Event → config defaults
+-- These defaults are merged into PersonaEngineDB.events.states
 Config.stateEvents = Config.stateEvents or {}
 
--- Defaults, applied into PersonaEngineDB later if needed
 local defaultStateEvents = {
     idle = {
         FRIEND_WHISPER = {
-            enabled     = true,
-            phraseKey   = "FRIEND_WHISPER",
-            cooldown    = nil, -- use catalog default if nil
+            enabled  = true,
+            phraseKey = "FRIEND_WHISPER",
+            cooldown = nil, -- use catalog/global default if nil
         },
         NPC_TALK = {
-            enabled     = true,
-            phraseKey   = "NPC_TALK",
+            enabled  = true,
+            phraseKey = "NPC_TALK",
         },
         AFK_WARNING = {
-            enabled     = true,
-            phraseKey   = "AFK_WARNING",
+            enabled  = true,
+            phraseKey = "AFK_WARNING",
         },
     },
+
     combat = {
         LOW_HEALTH = {
-            enabled     = true,
-            phraseKey   = "LOW_HEALTH",
-            cooldown    = 20,
+            enabled  = true,
+            phraseKey = "LOW_HEALTH",
+            cooldown = 20,
         },
         ENEMY_TALK = {
-            enabled     = true,
-            phraseKey   = "ENEMY_TALK",
+            enabled  = true,
+            phraseKey = "ENEMY_TALK",
         },
         HEAL_INCOMING = {
-            enabled     = true,
-            phraseKey   = "HEAL_INCOMING",
+            enabled  = true,
+            phraseKey = "HEAL_INCOMING",
         },
         FRIEND_WHISPER = {
-            enabled     = true,
-            phraseKey   = "FRIEND_WHISPER",
-            cooldown    = 15,
+            enabled  = true,
+            phraseKey = "FRIEND_WHISPER",
+            cooldown = 15,
         },
-		SELF_HEAL = {
-			id              = "SELF_HEAL",
-			category        = "combat",
-			description     = "Player performs a significant self-heal.",
-			payload         = { "amount", "spellId", "spellName" },
-			defaultCooldown = 12,
-		},
-
+        -- FIXED: this was a full event-definition blob; we only want state binding here
+        SELF_HEAL = {
+            enabled  = true,
+            phraseKey = "SELF_HEAL",
+            cooldown = 12, -- matches prior defaultCooldown intent
+        },
     },
 }
 
--- Merge into SavedVariables tree
+-- ##################################################
+-- Merge defaults into SavedVariables
+-- ##################################################
+
+if not PersonaEngineDB then
+    print("|cffff0000[PersonaEngine] PersonaEngineDB is nil in PE_EventCatalog.lua!|r")
+    return
+end
+
 PersonaEngineDB.events = PersonaEngineDB.events or {}
 local DB = PersonaEngineDB.events
 
@@ -73,16 +91,26 @@ local function applyDefaults(dst, src)
     end
 end
 
-DB.states  = DB.states  or {}
-DB.state   = DB.state   or "idle"
-DB.enabled = (DB.enabled ~= false)
+DB.states  = DB.states or {}
+DB.state   = DB.state or "idle"
+DB.enabled = (DB.enabled ~= false) -- default true
 
 applyDefaults(DB.states, defaultStateEvents)
 
-Config.db = DB  -- runtime handle for other files
+-- expose DB handle via PE.Config for other modules
+Config.db = DB
 
-PE.LogInit(MODULE)
-PE.RegisterModule("EventCatalog", {
-    name  = "Event Catalog",
-    class = "data",
-})
+-- ##################################################
+-- Module registration
+-- ##################################################
+
+if PE.LogInit then
+    PE.LogInit(MODULE)
+end
+
+if PE.RegisterModule then
+    PE.RegisterModule("EventCatalog", {
+        name  = "Event Catalog",
+        class = "data",
+    })
+end
