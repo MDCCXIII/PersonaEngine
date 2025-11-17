@@ -413,6 +413,26 @@ function PE.FireBubble(spellID, isReactionOverride)
 end
 
 ----------------------------------------------------
+-- Persona Engine - Macro usage
+----------------------------------------------------
+
+PE.Macros = PE.Macros or {}
+local Macros = PE.Macros
+
+function Macros.GetUsage()
+    local numGlobal, numChar, maxGlobal, maxChar = GetNumMacros()
+    return {
+        globalUsed = numGlobal,
+        globalFree = maxGlobal - numGlobal,
+        globalMax  = maxGlobal,
+        charUsed   = numChar,
+        charFree   = maxChar - numChar,
+        charMax    = maxChar,
+    }
+end
+
+
+----------------------------------------------------
 -- Module registration
 ----------------------------------------------------
 
