@@ -45,7 +45,7 @@ if PE.RegisterModule then
     PE.RegisterModule("Perf", {
         name  = "Performance Panel",
         class = "ui",
-        ok    = false,
+        ok    = true,
         notes = "Disabled: Titan Panel used instead; awaiting refactor for self-only monitoring.",
     })
 end

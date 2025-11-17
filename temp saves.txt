@@ -9,37 +9,34 @@ WeakAuras
 
 
 
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Chat.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Cloud9_Panel.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_ConfigUI.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PersonaEngine.toc
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Globals.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Core.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Taint.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Phrases.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_SentenceStructures.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Inflections.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_DynamicPhrases.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_EventCatalog.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_StateCatalog.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_EventConfig.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_EventEngine.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Experimental.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Globals.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Icon.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Inflections.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Perf.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Phrases.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Profiles.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Profile_Copporclang.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_SentenceStructures.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Slash.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_WoWEventBridge.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_SpellDB.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_SpellHooks.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_StateCatalog.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Taint.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Profiles.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Profile_Copporclang.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_VFX.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_WoWEventBridge.lua
-https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PersonaEngine.toc
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Icon.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Cloud9_Panel.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_ConfigUI.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Perf.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Chat.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Slash.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Experimental.lua
 
 
-We are still working through all the files in the repo in load order as defined by the toc 
 
-We are hardening, cleaning, fixing 
-especially trying to prevent taint
-the icon is free floating on screen and exactly where i like it.
+
 
 Note: ignore the - 200 thing that looks like a bug in PE_VFX.lua, the icon is free floating on screen and exactly where i like it.
