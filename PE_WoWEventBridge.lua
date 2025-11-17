@@ -160,7 +160,6 @@ end
 -- Main event handler
 ----------------------------------------------------
 f:SetScript("OnEvent", function(self, event, ...)
-    f:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         -- No Persona_OnLogin; just record activity
         Persona_RegisterActivity()
@@ -196,6 +195,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             Persona_RegisterActivity()
         end
     end
+
 
 	
 	if event == "PLAYER_LOGIN" then
