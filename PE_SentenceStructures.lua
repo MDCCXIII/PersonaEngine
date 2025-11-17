@@ -1,11 +1,30 @@
+-- ##################################################
 -- PE_SentenceStructures.lua
+-- Sentence templates + word pools + builder
+-- ##################################################
+
+-- Cache global PE and bail out loudly if core is missing
+local PE = PE
+if not PE then
+    print("|cffff0000[PersonaEngine] PE_SentenceStructures.lua loaded without PE core!|r")
+    return
+end
+
 local MODULE = "Sentences"
-PE.LogLoad(MODULE)
+if PE.LogLoad then
+    PE.LogLoad(MODULE)
+end
 
+-- Upvalues
+local random  = math.random
+local upper   = string.upper
 
-local PE         = PE
-local Structures = PE.Structures
-local Words      = PE.Words
+-- Ensure shared tables exist on PE
+local Structures = PE.Structures or {}
+PE.Structures   = Structures
+
+local Words      = PE.Words or {}
+PE.Words        = Words
 
 ----------------------------------------------------
 -- Templates
@@ -16,6 +35,7 @@ Structures.templates = {
         "{prefix} {verb} the {object}{punct}",
         "{prefix} {object} requires {adjective} {noun}{punct}",
     },
+
     excited = {
         "{prefix_upper}! {verb_upper}! THE {object_upper}{punct}",
     },
@@ -29,13 +49,13 @@ Structures.templates = {
     -- Enemy talking trash
     snide_enemy = {
         "{prefix} that {enemyAdj} {enemyNoun} just said '{quote}'{punct}",
-        "{exclamation} hostile vocalization from {enemyNoun}. {conclusion}{punct}",
+        "{exclamation} hostile vocalization from {enemyNoun}.\n{conclusion}{punct}",
     },
 
     -- AFK / idle snark
     idle_snark = {
         "{prefix} AFK protocol engaged. {conclusion}{punct}",
-        "{prefix} strategic idling online. {ending}{punct}",
+        "{prefix} strategic idling online.\n{ending}{punct}",
     },
 
     -- External heals: gratitude / appreciation, no raw heal numbers
@@ -56,19 +76,19 @@ Structures.templates = {
 ----------------------------------------------------
 
 Words.simple = {
-    prefix    = {"Behold,", "Observe,", "Witness this,", "Hypothesis:"},
-    verb      = {"calibrating", "reversing", "supercharging", "underclocking"},
-    object    = {"flux conduit", "rat-powered turbine", "quantum kettle"},
-    adjective = {"volatile", "questionable", "non-ethical"},
-    noun      = {"engineering", "experimentation", "wizardry"},
+    prefix = { "Behold,", "Observe,", "Witness this,", "Hypothesis:" },
+    verb = { "calibrating", "reversing", "supercharging", "underclocking" },
+    object = { "flux conduit", "rat-powered turbine", "quantum kettle" },
+    adjective = { "volatile", "questionable", "non-ethical" },
+    noun = { "engineering", "experimentation", "wizardry" },
 }
 
 Words.excited = {
-    prefix    = {"Behold,", "Observe,", "Witness this,", "Hypothesis:"},
-    verb      = {"calibrating", "reversing", "supercharging", "underclocking"},
-    object    = {"flux conduit", "rat-powered turbine", "quantum kettle"},
-    adjective = {"volatile", "questionable", "non-ethical"},
-    noun      = {"engineering", "experimentation", "wizardry"},
+    prefix = { "Behold,", "Observe,", "Witness this,", "Hypothesis:" },
+    verb = { "calibrating", "reversing", "supercharging", "underclocking" },
+    object = { "flux conduit", "rat-powered turbine", "quantum kettle" },
+    adjective = { "volatile", "questionable", "non-ethical" },
+    noun = { "engineering", "experimentation", "wizardry" },
 }
 
 -- Low-HP panic
@@ -77,7 +97,7 @@ Words.panic = {
         "Warning!",
         "ALERT!",
         "Diagnostic shriek:",
-        "This is fine. Probably.",
+        "This is fine.\nProbably.",
     },
     line = {
         "vital systems are filing formal complaints.",
@@ -95,9 +115,9 @@ Words.panic = {
 
 -- Enemy talking
 Words.enemy = {
-    prefix     = {"Observe:", "Hypothesis:", "Note:", "Data point:"},
-    enemyAdj   = {"loud", "overconfident", "flammable-looking", "loot-rich"},
-    enemyNoun  = {"meatbag", "target", "trash mob", "future test subject"},
+    prefix = { "Observe:", "Hypothesis:", "Note:", "Data point:" },
+    enemyAdj = { "loud", "overconfident", "flammable-looking", "loot-rich" },
+    enemyNoun = { "meatbag", "target", "trash mob", "future test subject" },
     conclusion = {
         "Retaliation strongly advised.",
         "Sass subroutines warming up.",
@@ -108,12 +128,7 @@ Words.enemy = {
 
 -- Idle / AFK snark
 Words.idle = {
-    prefix = {
-        "Status:",
-        "Diagnostics:",
-        "Report:",
-        "Mental note:",
-    },
+    prefix = { "Status:", "Diagnostics:", "Report:", "Mental note:" },
     conclusion = {
         "brain processes redirected to daydreaming.",
         "gears spinning, thoughts optional.",
@@ -136,10 +151,10 @@ Words.heal = {
     },
     line = {
         "{source} just upgraded my odds of surviving my own ideas.",
-        "{source} proved that medical science beats duct tape. Usually.",
+        "{source} proved that medical science beats duct tape.\nUsually.",
         "logging {source} as ‘preferred damage sponge enabler’.",
         "new theory: {source} actually wants me alive. Suspicious.",
-        "remind me to not explode {source}'s workshop. Today.",
+        "remind me to not explode {source}'s workshop.\nToday.",
     },
     conclusion = {
         "Future experiments will now include ‘not dying’.",
@@ -160,7 +175,7 @@ Words.self_heal = {
         "confirmed: I am my own best healer and worst patient.",
         "repaired critical systems with only minor screaming.",
         "healing achieved using science, panic, and one stolen bandage.",
-        "turns out my warranty is ‘fix it yourself’. And I did.",
+        "turns out my warranty is ‘fix it yourself’.\nAnd I did.",
     },
     ending = {
         "Note: still cheaper than hiring help.",
@@ -175,10 +190,16 @@ Words.self_heal = {
 
 local function W(group, key)
     local tbl = Words[group]
-    if not tbl then return "" end
+    if not tbl then
+        return ""
+    end
+
     local pool = tbl[key]
-    if not pool or #pool == 0 then return "" end
-    return pool[math.random(#pool)]
+    if not pool or #pool == 0 then
+        return ""
+    end
+
+    return pool[random(#pool)]
 end
 
 ----------------------------------------------------
@@ -186,14 +207,17 @@ end
 ----------------------------------------------------
 -- templateId: key into Structures.templates
 -- ctx: optional context (hpPercent, message, sourceName, amount, ...)
+----------------------------------------------------
 
 function PE.BuildSentence(templateId, ctx)
     ctx = ctx or {}
 
     local pool = Structures.templates[templateId]
-    if not pool or #pool == 0 then return "" end
+    if not pool or #pool == 0 then
+        return ""
+    end
 
-    local tpl = pool[math.random(#pool)]
+    local tpl = pool[random(#pool)]
 
     if templateId == "simple" or templateId == "excited" then
         local group = (templateId == "simple") and "simple" or "excited"
@@ -204,26 +228,26 @@ function PE.BuildSentence(templateId, ctx)
             :gsub("{object}",       W(group, "object"))
             :gsub("{adjective}",    W(group, "adjective"))
             :gsub("{noun}",         W(group, "noun"))
-            :gsub("{prefix_upper}", string.upper(W(group, "prefix")))
-            :gsub("{verb_upper}",   string.upper(W(group, "verb")))
-            :gsub("{object_upper}", string.upper(W(group, "object")))
+            :gsub("{prefix_upper}", upper(W(group, "prefix")))
+            :gsub("{verb_upper}",   upper(W(group, "verb")))
+            :gsub("{object_upper}", upper(W(group, "object")))
 
     elseif templateId == "panic_low_hp" then
         tpl = tpl
-            :gsub("{prefix}",  W("panic", "prefix"))
-            :gsub("{line}",    W("panic", "line"))
-            :gsub("{ending}",  W("panic", "ending"))
+            :gsub("{prefix}", W("panic", "prefix"))
+            :gsub("{line}",   W("panic", "line"))
+            :gsub("{ending}", W("panic", "ending"))
 
     elseif templateId == "snide_enemy" then
         local quote = ctx.message or "unintelligible noise"
 
         tpl = tpl
-            :gsub("{prefix}",      W("enemy", "prefix"))
-            :gsub("{enemyAdj}",    W("enemy", "enemyAdj"))
-            :gsub("{enemyNoun}",   W("enemy", "enemyNoun"))
-            :gsub("{conclusion}",  W("enemy", "conclusion"))
+            :gsub("{prefix}",     W("enemy", "prefix"))
+            :gsub("{enemyAdj}",   W("enemy", "enemyAdj"))
+            :gsub("{enemyNoun}",  W("enemy", "enemyNoun"))
+            :gsub("{conclusion}", W("enemy", "conclusion"))
             :gsub("{exclamation}", W("enemy", "prefix"))
-            :gsub("{quote}",       quote)
+            :gsub("{quote}",      quote)
 
     elseif templateId == "idle_snark" then
         tpl = tpl
@@ -232,7 +256,7 @@ function PE.BuildSentence(templateId, ctx)
             :gsub("{ending}",     W("idle", "ending"))
 
     elseif templateId == "heal_gratitude" then
-        local src = ctx.sourceName or "someone"
+        local src  = ctx.sourceName or "someone"
         local line = W("heal", "line") or ""
         line = line:gsub("{source}", src)
 
@@ -245,22 +269,30 @@ function PE.BuildSentence(templateId, ctx)
         local line = W("self_heal", "line") or ""
 
         tpl = tpl
-            :gsub("{prefix}",     W("self_heal", "prefix"))
-            :gsub("{line}",       line)
-            :gsub("{ending}",     W("self_heal", "ending"))
+            :gsub("{prefix}", W("self_heal", "prefix"))
+            :gsub("{line}",   line)
+            :gsub("{ending}", W("self_heal", "ending"))
     end
 
     if tpl:find("{punct}", 1, true) then
-        local punct = PE.RandomPunct and PE.RandomPunct() or "!"
+        local punct = (PE.RandomPunct and PE.RandomPunct()) or "!"
         tpl = tpl:gsub("{punct}", punct)
     end
 
     return tpl
 end
 
-PE.LogInit(MODULE)
-PE.RegisterModule("Sentences", {
-    name  = "Sentence Structures",
-    class = "engine",
-})
+----------------------------------------------------
+-- Module registration
+----------------------------------------------------
 
+if PE.LogInit then
+    PE.LogInit(MODULE)
+end
+
+if PE.RegisterModule then
+    PE.RegisterModule("Sentences", {
+        name  = "Sentence Structures",
+        class = "engine",
+    })
+end
