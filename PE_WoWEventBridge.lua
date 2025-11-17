@@ -1,414 +1,291 @@
--- Persona Engine core
+-- ##################################################
+-- PE_WoWEventBridge.lua
+-- Bridges Blizzard events into PersonaEngine events
+-- ##################################################
 
-local MODULE = "Core"
-PE.LogLoad(MODULE)
+local MODULE = "EventBridge"
 
--- Expects these globals from PE_Globals.lua:
--- SR_On   - 1 = speech enabled, 0 = muted
--- lastP   - last phrase spoken (for de-dupe)
--- P       - phrase pieces table
--- PE      - addon namespace table
+-- Root PE table should be defined in PE_Globals.lua
+local PE = PE
+if not PE or type(PE) ~= "table" then
+    print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
+    return
+end
+
+-- Safe logging wrapper
+if PE.LogLoad then
+    PE.LogLoad(MODULE)
+end
 
 ----------------------------------------------------
--- Persona Engine - Chat Rate Limiter
+-- Local API upvalues (perf + no new globals)
 ----------------------------------------------------
--- Prevents addon-driven messages from tripping WoW's
--- chat throttle.
+local CreateFrame               = CreateFrame
+local GetTime                   = GetTime
+local UnitAffectingCombat       = UnitAffectingCombat
+local UnitHealth                = UnitHealth
+local UnitHealthMax             = UnitHealthMax
+local UnitIsAFK                 = UnitIsAFK
+local UnitGUID                  = UnitGUID
+local CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo
 
-local RATE_WINDOW   = 8   -- seconds in a sliding window
-local RATE_MAX_MSGS = 5   -- max messages allowed in that window
+----------------------------------------------------
+-- Runtime container
+----------------------------------------------------
+PE.Runtime = PE.Runtime or {}
+local Runtime = PE.Runtime
 
-local function PE_CanSendMessage()
+Runtime.state      = Runtime.state      or "idle"
+Runtime.cooldowns  = Runtime.cooldowns  or {}
+Runtime._wasAFK    = Runtime._wasAFK    or false
+
+----------------------------------------------------
+-- Event frame
+----------------------------------------------------
+local f = CreateFrame("Frame")
+Runtime.eventFrame = f
+
+f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_REGEN_DISABLED")
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
+f:RegisterEvent("UNIT_HEALTH")
+f:RegisterEvent("CHAT_MSG_WHISPER")
+f:RegisterEvent("CHAT_MSG_MONSTER_SAY")
+f:RegisterEvent("CHAT_MSG_MONSTER_YELL")
+f:RegisterEvent("PLAYER_FLAGS_CHANGED")
+f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+
+----------------------------------------------------
+-- Idle scheduler: random CHARACTER_IDLE musings
+-- Fires between ~90s and ~10min of idle time
+----------------------------------------------------
+local idleNextAt = nil
+
+local function Persona_ScheduleNextIdle()
     local now = GetTime()
-    PE._rateState = PE._rateState or { windowStart = 0, count = 0 }
-    local st = PE._rateState
-
-    if now - (st.windowStart or 0) > RATE_WINDOW then
-        st.windowStart = now
-        st.count = 0
-    end
-
-    if st.count >= RATE_MAX_MSGS then
-        return false
-    end
-
-    st.count = st.count + 1
-    return true
+    -- random interval between 90s (1.5min) and 600s (10min)
+    idleNextAt = now + math.random(90, 600)
 end
 
-----------------------------------------------------
--- Persona Engine - Speech Permission Helper
-----------------------------------------------------
--- Central gate used by all speech paths.
--- cfg is optional; if provided, its .enabled flag is honored.
+-- Schedule first idle window after load; we’ll reset again on login.
+Persona_ScheduleNextIdle()
 
-function PE.CanSpeak(cfg)
-    -- Master SR toggle
-    if SR_On ~= 1 then
-        return false
-    end
-
-    -- Hard mute while AFK: no persona speech of any kind
-    local rt = PE.Runtime
-    if rt and rt._isAFK then
-        return false
-    end
-
-    -- Optional per-spell / per-event disable
-    if cfg and cfg.enabled == false then
-        return false
-    end
-
-    return true
-end
-
-----------------------------------------------------
--- Persona Engine - Channel Resolver
-----------------------------------------------------
--- For automated/event-driven speech we route "unsafe" SAY/YELL
--- into group channels or EMOTE where appropriate.
-
-local function PE_ResolveChannel(channel)
-    channel = channel or "SAY"
-
-    if channel == "EMOTE" then
-        return "EMOTE"
-    end
-
-    -- Instance group → prefer INSTANCE_CHAT over SAY/YELL
-    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
-        if channel == "SAY" or channel == "YELL" then
-            return "INSTANCE_CHAT"
-        end
-        return channel
-    end
-
-    -- Raid → prefer RAID
-    if IsInRaid() then
-        if channel == "SAY" or channel == "YELL" then
-            return "RAID"
-        end
-        return channel
-    end
-
-    -- Party → prefer PARTY
-    if IsInGroup() then
-        if channel == "SAY" or channel == "YELL" then
-            return "PARTY"
-        end
-        return channel
-    end
-
-    -- Solo: in combat, SAY/YELL from addons are flaky / partially protected.
-    -- In that specific case, fall back to EMOTE so Copporclang still
-    -- appears to react without causing blocked actions.
-    local inGroup  = IsInGroup() or IsInRaid()
-    local inCombat = UnitAffectingCombat("player")
-
-    if not inGroup and inCombat and (channel == "SAY" or channel == "YELL") then
-        return "EMOTE"
-    end
-
-    -- Otherwise, honor the requested channel.
-    return channel
-end
-
-----------------------------------------------------
--- Persona Engine - Phrase Selection Helper
-----------------------------------------------------
-
-local function PE_SelectLine(pool)
-    if not pool or #pool == 0 then
-        return nil
-    end
-
-    local line = pool[math.random(#pool)]
-
-    -- Simple de-dupe if the pool has variety
-    if #pool > 1 and line == lastP then
-        line = pool[math.random(#pool)]
-    end
-
-    lastP = line
-    return line
-end
-
-----------------------------------------------------
--- Persona Engine - Unified Send Helper
-----------------------------------------------------
--- opts:
---   opts.cfg           - optional spell config (for .enabled)
---   opts.bypassResolve - true = don't remap channel (used by FireBubble)
---   opts.eventId       - optional abstract event id for inflection context
---   opts.ctx           - optional context table for inflection
-
-local function PE_SendPersonaMessage(text, channel, opts)
-    if not text or text == "" then
+local function Persona_IdleOnUpdate(self, elapsed)
+    if not idleNextAt then
         return
     end
 
-    if not PE.CanSpeak(opts and opts.cfg) then
+    -- Only care when actually idle and not in combat
+    if UnitAffectingCombat("player") then
         return
     end
 
-    if not PE_CanSendMessage() then
+    if Runtime.state ~= "idle" then
         return
     end
 
-    local outChan = channel or "SAY"
-    if not (opts and opts.bypassResolve) then
-        outChan = PE_ResolveChannel(outChan)
+    local now = GetTime()
+    if now < idleNextAt then
+        return
     end
 
-    if PE.InflectMaybe then
-        text = PE.InflectMaybe(text, opts and opts.eventId, nil, opts and opts.ctx)
+    -- Time's up: ask EventEngine to try CHARACTER_IDLE
+    if Runtime.TriggerEvent then
+        Runtime.TriggerEvent("CHARACTER_IDLE", {})
     end
 
-    -- Debug-level trace of what we're trying to send
-    if PE.Log then
-        PE.Log(4, "[Persona] sending via", outChan, "text:", text)
-    end
+    -- Whether or not it actually spoke (cooldown may block),
+    -- schedule the next window.
+    Persona_ScheduleNextIdle()
+end
 
-    local ok, err = pcall(SendChatMessage, text, outChan)
-    if not ok then
-        -- Soft-fail to default chat, but do not raise an error
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                "|cffff0000[Persona] SendChatMessage failed:|r " .. tostring(err)
-            )
+f:SetScript("OnUpdate", Persona_IdleOnUpdate)
+
+----------------------------------------------------
+-- AFK transition handler
+----------------------------------------------------
+local function HandleAFKChange()
+    local isAFK  = UnitIsAFK("player")
+    local wasAFK = Runtime._wasAFK or false
+
+    if isAFK and not wasAFK then
+        -- Transition: NOT AFK → AFK
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("AFK_WARNING", {})
         end
     end
-end
 
--- Expose safe send helper to other modules (EventEngine, etc.)
-PE.SendPersonaMessage = PE_SendPersonaMessage
-
-----------------------------------------------------
--- Persona Engine — Core SR Logic
-----------------------------------------------------
-
-function SR(a)
-    if not a then
-        return
-    end
-
-    local chan   = a.channel or "SAY"
-    local chance = a.chance or 10
-    local pool   = a.phr
-
-    if not PE.CanSpeak() then
-        return
-    end
-
-    if not pool or #pool == 0 then
-        return
-    end
-
-    if math.random(chance) ~= 1 then
-        return
-    end
-
-    local line = PE.SelectLine and PE.SelectLine(pool) or PE_SelectLine(pool)
-    if not line then
-        return
-    end
-
-    PE_SendPersonaMessage(line, chan, {
-        eventId = a.eventId or "SR_MACRO",
-        ctx     = a.ctx,
-    })
+    Runtime._wasAFK = isAFK
 end
 
 ----------------------------------------------------
--- Phrase Builder / Combo Engine
+-- Main event handler
 ----------------------------------------------------
+f:SetScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_LOGIN" then
+        -- Seed state on login
+        if Runtime.SetState then
+            if UnitAffectingCombat("player") then
+                Runtime.SetState("combat")
+            else
+                Runtime.SetState("idle")
+            end
+        end
 
-function SetP(i, t)
-    if type(t) == "table" then
-        P[i] = t[math.random(#t)]
-    else
-        P[i] = t
-    end
-end
+        -- Reset idle scheduling cleanly on login
+        Persona_ScheduleNextIdle()
 
-function SpeakP(c, h, n)
-    if not PE.CanSpeak() then
-        return
-    end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        -- Entering combat
+        if Runtime.SetState then
+            Runtime.SetState("combat")
+        end
 
-    c = c or 10
-    if math.random(c) ~= 1 then
-        return
-    end
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("ENTERING_COMBAT", {})
+        end
 
-    h = h or "SAY"
-    n = n or 2
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Leaving combat
+        if Runtime.SetState then
+            Runtime.SetState("idle")
+        end
 
-    local s = ""
-    for i = 1, n do
-        s = s .. (P[i] or "")
-    end
+        Persona_ScheduleNextIdle()
 
-    if s ~= "" then
-        PE_SendPersonaMessage(s, h, { eventId = "SPEAKP" })
-    end
-end
-
-----------------------------------------------------
--- Delayed send helper (for reaction-style FireBubble lines)
-----------------------------------------------------
-
-local function PE_SchedulePersonaMessage(text, channel, opts, delay)
-    delay = delay or 0
-
-    if delay <= 0 or not (C_Timer and C_Timer.After) then
-        -- Immediate send or no timer available
-        PE_SendPersonaMessage(text, channel, opts)
-        return
-    end
-
-    local l  = text
-    local ch = channel
-    local o  = opts
-
-    C_Timer.After(delay, function()
-        -- Re-check speech permission at fire time in case user toggled things
-        if PE.CanSpeak and not PE.CanSpeak(o and o.cfg) then
+    elseif event == "UNIT_HEALTH" then
+        local unit = ...
+        if unit ~= "player" then
             return
         end
-        PE_SendPersonaMessage(l, ch, o)
-    end)
-end
 
-----------------------------------------------------
--- Persona Engine - Bubble Macro Helper
-----------------------------------------------------
--- Usage:
---   #showtooltip Freezing Trap
---   /run PE.FireBubble(187650)
---   /cast Freezing Trap
---
--- Optional 2nd arg:
---   isReactionOverride = true  → always delayed “reaction”
---   isReactionOverride = false → always immediate “action”
---   nil                     → use cfg.reactionChance (if present)
+        local hp  = UnitHealth("player")
+        local max = UnitHealthMax("player")
+        if max <= 0 then
+            return
+        end
 
-function PE.FireBubble(spellID, isReactionOverride)
-    if not spellID then
-        return
-    end
+        local pct = hp / max
 
-    if not PersonaEngineDB or not PersonaEngineDB.spells then
-        return
-    end
+        local threshold = 0.35
+        if PE.Config and PE.Config.db and PE.Config.db.lowHealthThreshold then
+            threshold = PE.Config.db.lowHealthThreshold
+        end
 
-    local cfg = PersonaEngineDB.spells[spellID]
-    if not cfg then
-        return
-    end
+        if pct <= threshold and Runtime.TriggerEvent then
+            Runtime.TriggerEvent("LOW_HEALTH", {
+                hpPercent = pct,
+                hp        = hp,
+                maxHp     = max,
+            })
+        end
 
-    -- Global + per-spell enable flags
-    if not PE.CanSpeak(cfg) then
-        return
-    end
+    elseif event == "CHAT_MSG_WHISPER" then
+        local msg, sender = ...
 
-    -- Chance check
-    local chance = cfg.chance or 10
-    if chance < 1 then
-        chance = 1
-    end
-    if math.random(chance) ~= 1 then
-        return
-    end
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("FRIEND_WHISPER", {
+                message = msg,
+                sender  = sender,
+            })
+        end
 
-    -- Choose channel (prioritize SAY, then YELL, then EMOTE, then first)
-    local channel = "SAY"
-    if cfg.channels and next(cfg.channels) then
-        if cfg.channels.SAY then
-            channel = "SAY"
-        elseif cfg.channels.YELL then
-            channel = "YELL"
-        elseif cfg.channels.EMOTE then
-            channel = "EMOTE"
+    elseif event == "CHAT_MSG_MONSTER_SAY"
+        or event == "CHAT_MSG_MONSTER_YELL"
+    then
+        local msg, sender = ...
+
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("NPC_TALK", {
+                message = msg,
+                sender  = sender,
+                channel = (event == "CHAT_MSG_MONSTER_YELL") and "YELL" or "SAY",
+            })
+        end
+
+    elseif event == "PLAYER_FLAGS_CHANGED" then
+        local unit = ...
+        if unit == "player" then
+            HandleAFKChange()
+        end
+
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        local timestamp, subevent,
+              _, srcGUID, srcName, srcFlags,
+              _, dstGUID, dstName, dstFlags,
+              _, spellId, spellName, _, amount =
+            CombatLogGetCurrentEventInfo()
+
+        if subevent ~= "SPELL_HEAL" and subevent ~= "SPELL_PERIODIC_HEAL" then
+            return
+        end
+
+        local playerGUID = UnitGUID("player")
+        if dstGUID ~= playerGUID then
+            return
+        end
+
+        local maxHP = UnitHealthMax("player")
+        if maxHP <= 0 then
+            return
+        end
+
+        amount = amount or 0
+        local frac = amount / maxHP
+
+        local cfg = (PE.Config and PE.Config.db) and PE.Config.db or {}
+        local healThreshold     = cfg.healThreshold     or 0.10 -- external
+        local selfHealThreshold = cfg.selfHealThreshold or 0.15 -- self
+
+        local isSelf = (srcGUID == playerGUID)
+
+        if isSelf then
+            -- Ignore passive/self periodic ticks (leech, auras)
+            if subevent == "SPELL_PERIODIC_HEAL" then
+                return
+            end
+
+            -- Only big self-heals
+            if frac < selfHealThreshold then
+                return
+            end
+
+            if Runtime.TriggerEvent then
+                Runtime.TriggerEvent("SELF_HEAL", {
+                    sourceName = srcName,
+                    amount     = amount,
+                    spellId    = spellId,
+                    spellName  = spellName,
+                })
+            end
         else
-            for ch, on in pairs(cfg.channels) do
-                if on then
-                    channel = ch
-                    break
-                end
+            -- Only react to meaningful external heals
+            if frac < healThreshold then
+                return
+            end
+
+            if Runtime.TriggerEvent then
+                Runtime.TriggerEvent("HEAL_INCOMING", {
+                    sourceName = srcName,
+                    amount     = amount,
+                    spellId    = spellId,
+                    spellName  = spellName,
+                })
             end
         end
     end
-
-    -- Decide which phrase system to use
-    local line
-    local ctx     = cfg.ctx or {}
-    local eventId = cfg.eventId or ("BUBBLE_" .. tostring(spellID))
-
-    if cfg.phraseKey and PE.Phrases and PE.Phrases.PickLine then
-        -- Use the static+dynamic phrase engine
-        line = PE.Phrases.PickLine(cfg.phraseKey, ctx, nil, eventId)
-    else
-        -- Legacy per-spell phrase list
-        local phrases = cfg.phrases
-        if not phrases or #phrases == 0 then
-            return
-        end
-        line = PE_SelectLine(phrases)
-    end
-
-    if not line or line == "" then
-        return
-    end
-
-    ------------------------------------------------
-    -- Action vs reaction (optional delay)
-    ------------------------------------------------
-    local delay = 0
-
-    if isReactionOverride == true then
-        -- Force reaction-style delay
-        local minD = cfg.reactionDelayMin or 1.0
-        local maxD = cfg.reactionDelayMax or 2.5
-        if maxD < minD then
-            maxD = minD
-        end
-        delay = minD + math.random() * (maxD - minD)
-    elseif isReactionOverride == false then
-        delay = 0
-    else
-        -- No override → probabilistic reaction
-        local rc = cfg.reactionChance or 0
-        if rc > 0 and math.random() < rc then
-            local minD = cfg.reactionDelayMin or 1.0
-            local maxD = cfg.reactionDelayMax or 2.5
-            if maxD < minD then
-                maxD = minD
-            end
-            delay = minD + math.random() * (maxD - minD)
-        end
-    end
-
-    -- FireBubble bypasses resolver so macros can use true SAY/YELL/etc.
-    PE_SchedulePersonaMessage(
-        line,
-        channel,
-        {
-            cfg          = cfg,
-            bypassResolve = true,
-            eventId      = eventId,
-            ctx          = ctx,
-        },
-        delay
-    )
-end
+end)
 
 ----------------------------------------------------
 -- Module registration
 ----------------------------------------------------
+if PE.LogInit then
+    PE.LogInit(MODULE)
+end
 
-PE.LogInit(MODULE)
-PE.RegisterModule("Core", {
-    name  = "Core Systems",
-    class = "core",
-})
+if PE.RegisterModule then
+    PE.RegisterModule(MODULE, {
+        name  = "WoW Event Bridge",
+        class = "engine",
+    })
+end
