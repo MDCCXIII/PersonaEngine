@@ -1,28 +1,39 @@
--- PE_Icon.lua -- used to be PE_Minimap.lua
+-- ##################################################
+-- PE_Icon.lua
+-- Minimap / DataBroker launcher + custom draggable status button
+-- ##################################################
+
 local MODULE = "Icon"
-PE.LogLoad(MODULE)
+
+-- Root PE table should be defined in PE_Globals.lua
+local PE = PE
+if not PE or type(PE) ~= "table" then
+    print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
+    return
+end
+
+if not PersonaEngineDB or type(PersonaEngineDB) ~= "table" then
+    print("|cffff0000[PersonaEngine] ERROR: PersonaEngineDB missing in " .. MODULE .. "|r")
+    return
+end
+
+if PE.LogLoad then
+    PE.LogLoad(MODULE)
+end
 
 -- ##################################################
--- Minimap / DataBroker launcher
+-- LDB / LibDBIcon integration (optional)
 -- ##################################################
--- LDB object + custom draggable button near minimap
-
--- PE_Icon.lua -- used to be PE_Minimap.lua
--- LDB object + custom draggable button near minimap
 
 local LDB, Icon
 
--- LibStub is only available if some library addon (or another Ace addon)
--- loaded it. When PersonaEngine is running solo, LibStub may be nil.
+-- LibStub may not exist if no Ace libs are loaded; keep this optional.
 if LibStub then
     LDB  = LibStub("LibDataBroker-1.1", true)
-    Icon = LibStub("LibDBIcon-1.0", true) -- optional; safe even if missing
-else
-    LDB, Icon = nil, nil
+    Icon = LibStub("LibDBIcon-1.0", true) -- optional; safe even if nil
 end
 
-
--- Create LDB object so LDB displays (Bazooka, etc.) can still use it
+-- LDB object so display addons (Bazooka, etc.) can use it
 local obj
 if LDB then
     obj = LDB:NewDataObject("PersonaEngine", {
@@ -30,27 +41,35 @@ if LDB then
         text = "Persona Engine",
         icon = "Interface\\AddOns\\PersonaEngine\\references\\persona_brain_icon.tga",
         OnClick = function(frame, button)
-            PersonaEngine_Button_OnClick(frame, button) -- we’ll define this below
+            if _G.PersonaEngine_Button_OnClick then
+                _G.PersonaEngine_Button_OnClick(frame, button)
+            end
         end,
         OnTooltipShow = function(tt)
-            PersonaEngine_Button_OnTooltip(tt) -- also defined below
+            if _G.PersonaEngine_Button_OnTooltip then
+                _G.PersonaEngine_Button_OnTooltip(tt)
+            end
         end,
     })
 end
 
-------------------------------------------------
+-- ##################################################
 -- Custom button (free position, proper scale)
-------------------------------------------------
+-- NOTE: This is the free-floating status icon you like.
+-- It is parented to UIParent, *not* the minimap.
+-- ##################################################
 
 local function PersonaEngine_CreateButton()
-    if PersonaEngineButton then return PersonaEngineButton end
+    if PersonaEngineButton then
+        return PersonaEngineButton
+    end
 
     local cfg = PersonaEngineDB.button or {}
     local d   = PersonaEngine_ButtonDefaults or {}
 
     local btn = CreateFrame("Button", "PersonaEngineButton", UIParent)
 
-    -- Size + scale from config
+    -- Base size & scale from config/defaults
     btn:SetSize(32, 32)
     btn:SetScale(cfg.scale or d.scale or 1.0)
 
@@ -62,7 +81,8 @@ local function PersonaEngine_CreateButton()
     if lvl then
         btn:SetFrameLevel(lvl)
     else
-        btn:SetFrameLevel((btn:GetParent():GetFrameLevel() or 0) + 1)
+        local parentLevel = (btn:GetParent() and btn:GetParent():GetFrameLevel()) or 0
+        btn:SetFrameLevel(parentLevel + 1)
     end
 
     btn:SetClampedToScreen(true)
@@ -71,13 +91,14 @@ local function PersonaEngine_CreateButton()
     btn:RegisterForDrag("LeftButton")
     btn:RegisterForClicks("AnyUp")
 
-    -- Position restore
+    -- Position restore:
+    -- This is what keeps it free-floating in the top-right region.
     btn:SetPoint(
-        cfg.point or d.point or "TOPRIGHT",
+        cfg.point    or d.point    or "TOPRIGHT",
         UIParent,
         cfg.relPoint or d.relPoint or "TOPRIGHT",
-        cfg.x or d.x or 0,
-        cfg.y or d.y or 0
+        cfg.x        or d.x        or 0,
+        cfg.y        or d.y        or 0
     )
 
     --------------------------------------------------
@@ -91,28 +112,22 @@ local function PersonaEngine_CreateButton()
     btn.icon = icon
 
     --------------------------------------------------
-	-- Border texture with adjustable offsets
-	--------------------------------------------------
+    -- Border texture with adjustable offsets
+    --------------------------------------------------
+    local borderFrame = CreateFrame("Frame", nil, btn)
+    borderFrame:SetAllPoints(btn)
 
-	-- Create a container that always matches the button
-	local borderFrame = CreateFrame("Frame", nil, btn)
-	borderFrame:SetAllPoints(btn)
+    local border = borderFrame:CreateTexture(nil, "OVERLAY")
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
-	-- Now apply offsets to the actual border texture
-	local border = borderFrame:CreateTexture(nil, "OVERLAY")
-	border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    local offsetX = 10.5 -- tweakable
+    local offsetY = -10.1 -- tweakable
 
-	-- Desired offsets:
-	local offsetX = 10.5      -- tweak these
-	local offsetY = -10.1     -- tweak these
+    border:ClearAllPoints()
+    border:SetPoint("CENTER", borderFrame, "CENTER", offsetX, offsetY)
 
-	border:ClearAllPoints()
-	border:SetPoint("CENTER", borderFrame, "CENTER", offsetX, offsetY)
-
-	-- Make border auto-scale by matching the button size
-	border:SetSize(btn:GetWidth() + 22, btn:GetHeight() + 22)
-
-	btn.border = border
+    border:SetSize(btn:GetWidth() + 22, btn:GetHeight() + 22)
+    btn.border = border
 
     --------------------------------------------------
     -- Optional highlight
@@ -123,7 +138,7 @@ local function PersonaEngine_CreateButton()
     hl:SetAllPoints(btn)
 
     --------------------------------------------------
-    -- Drag behavior
+    -- Drag behavior (persist position)
     --------------------------------------------------
     btn:SetScript("OnDragStart", function(self)
         self:StartMoving()
@@ -132,7 +147,6 @@ local function PersonaEngine_CreateButton()
     btn:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         local point, _, relPoint, xOfs, yOfs = self:GetPoint()
-
         PersonaEngineDB.button.point    = point
         PersonaEngineDB.button.relPoint = relPoint
         PersonaEngineDB.button.x        = xOfs
@@ -156,27 +170,32 @@ local function PersonaEngine_CreateButton()
     return btn
 end
 
+-- Slight delay so SavedVariables and globals are ready
+if C_Timer and C_Timer.After then
+    C_Timer.After(0.1, PersonaEngine_CreateButton)
+else
+    PersonaEngine_CreateButton()
+end
 
-C_Timer.After(0.1, PersonaEngine_CreateButton)
-
-
-
-------------------------------------------------
--- Shared click + tooltip logic
-------------------------------------------------
+-- ##################################################
+-- Shared click + tooltip logic (global on purpose)
+-- ##################################################
 
 function PersonaEngine_Button_OnClick(self, button)
-	if PersonaEngineDB.DevMode then
-		PE.Log(5,"|cffffff00[Debug] Click detected: button =", button, 
-		  "ctrl =", tostring(IsControlKeyDown()), 
-		  "shift =", tostring(IsShiftKeyDown()),
-		  "alt =", tostring(IsAltKeyDown()))
-	end
+    if PersonaEngineDB.DevMode and PE.Log then
+        PE.Log(5,
+            "|cffffff00[Debug] Click detected: button =",
+            button,
+            "ctrl =", tostring(IsControlKeyDown()),
+            "shift =", tostring(IsShiftKeyDown()),
+            "alt =", tostring(IsAltKeyDown())
+        )
+    end
 
-	-- DevMode Ctrl+Left: toggle perf panel
+    -- DevMode Ctrl+Left: toggle perf panel
     if PersonaEngineDB.DevMode and IsControlKeyDown() and button == "LeftButton" then
-        if PersonaEngine_TogglePerfFrame then
-            PersonaEngine_TogglePerfFrame()
+        if _G.PersonaEngine_TogglePerfFrame then
+            _G.PersonaEngine_TogglePerfFrame()
         end
         return
     end
@@ -188,20 +207,26 @@ function PersonaEngine_Button_OnClick(self, button)
                 local cur = GetCVar("scriptErrors")
                 if cur == "1" then
                     SetCVar("scriptErrors", 0)
-                    PE.Log(4,"|cff88ff88[Dev] scriptErrors = 0|r")
+                    if PE.Log then
+                        PE.Log(4, "|cff88ff88[Dev] scriptErrors = 0|r")
+                    end
                 else
                     SetCVar("scriptErrors", 1)
-                    PE.Log(4,"|cffff8888[Dev] scriptErrors = 1|r")
+                    if PE.Log then
+                        PE.Log(4, "|cffff8888[Dev] scriptErrors = 1|r")
+                    end
                 end
                 ReloadUI()
                 return
             elseif button == "RightButton" then
-                PE.Log(4,"|cffffff00[Dev] Reloading UI...|r")
+                if PE.Log then
+                    PE.Log(4, "|cffffff00[Dev] Reloading UI...|r")
+                end
                 ReloadUI()
                 return
             end
         end
-        -- If DevMode is off, Shift does nothing for now
+        -- If DevMode is off, Shift does nothing special for now.
     end
 
     -- Normal clicks
@@ -209,52 +234,56 @@ function PersonaEngine_Button_OnClick(self, button)
         if PE and PE.ToggleConfig then
             PE.ToggleConfig()
         end
-	elseif button == "RightButton" then
-		local wasOn = (SR_On == 1)
-		local nowOn = not wasOn
 
-		-- Toggle core flag
-		SR_On = nowOn and 1 or 0
+    elseif button == "RightButton" then
+        local wasOn = (SR_On == 1)
+        local nowOn = not wasOn
 
-		if nowOn then
-			-- Engine enabled
-			local pool = PE_EngineOnLines or {}
-			local line = pool[math.random(#pool)] or "Speech module online."
-			SendChatMessage(line, "SAY")
+        -- Toggle core flag
+        SR_On = nowOn and 1 or 0
 
-			PE.Log("|cff00ff00Persona Engine Enabled|r")
-		else
-			-- Engine disabled
-			local offPool = PE_EngineOffLines or {}
-			local line = offPool[math.random(#offPool)] or "Speech module offline."
-			SendChatMessage(line, "SAY")
+        if nowOn then
+            -- Engine enabled
+            local pool = PE_EngineOnLines or {}
+            local line = pool[math.random(#pool)] or "Speech module online."
+            SendChatMessage(line, "SAY")
+            if PE.Log then
+                PE.Log("|cff00ff00Persona Engine Enabled|r")
+            end
+        else
+            -- Engine disabled
+            local offPool = PE_EngineOffLines or {}
+            local line = offPool[math.random(#offPool)] or "Speech module offline."
+            SendChatMessage(line, "SAY")
+            if PE.Log then
+                PE.Log("|cffff0000Persona Engine Disabled|r")
+            end
 
-			PE.Log("|cffff0000Persona Engine Disabled|r")
-
-			-- Rare spooky glitch line - in lore: shutdown failed
-			local scaryPool = PE_EngineOffScaryLines or {}
-			if #scaryPool > 0 and math.random(20) == 1 then
-				local scary = scaryPool[math.random(#scaryPool)]
-				SendChatMessage(scary, "SAY")
-			end
-		end
-	end
-	end
+            -- Rare spooky glitch line - in lore: shutdown failed
+            local scaryPool = PE_EngineOffScaryLines or {}
+            if #scaryPool > 0 and math.random(20) == 1 then
+                local scary = scaryPool[math.random(#scaryPool)]
+                SendChatMessage(scary, "SAY")
+            end
+        end
+    end
+end
 
 function PersonaEngine_Button_OnTooltip(tt)
-    if not tt or not tt.AddLine then return end
+    if not tt or not tt.AddLine then
+        return
+    end
 
     tt:ClearLines()
     tt:AddLine("Persona Engine", 1, 1, 1)
     tt:AddLine("|cff00ff88Copporclang's Personality Core|r")
     tt:AddLine(" ")
-
     tt:AddLine("|cffffffffLeft-click:|r Open control console", 0.8, 0.8, 0.8)
     tt:AddLine("|cffffffffRight-click:|r Toggle speech module", 0.8, 0.8, 0.8)
 
     if PersonaEngineDB.DevMode then
         tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0)
-		tt:AddLine("|cffffffffCtrl+Left-click:|r Performance panel", 0.8, 0.8, 0.8)
+        tt:AddLine("|cffffffffCtrl+Left-click:|r Performance panel", 0.8, 0.8, 0.8)
         tt:AddLine("|cffffffffShift+Left-click:|r Toggle Lua errors & reload", 0.8, 0.8, 0.8)
         tt:AddLine("|cffffffffShift+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
     else
@@ -263,12 +292,20 @@ function PersonaEngine_Button_OnTooltip(tt)
 
     tt:AddLine(" ")
     tt:AddLine("|cffffd200Warning: Button may emit stray ideas.|r")
-
     tt:Show()
 end
 
-PE.LogInit(MODULE)
-PE.RegisterModule("Icon", {
-    name  = "Minimap Icon",
-    class = "ui",
-})
+-- ##################################################
+-- Module registration
+-- ##################################################
+
+if PE.LogInit then
+    PE.LogInit(MODULE)
+end
+
+if PE.RegisterModule then
+    PE.RegisterModule("Icon", {
+        name  = "Minimap Icon",
+        class = "ui",
+    })
+end
