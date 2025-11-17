@@ -38,6 +38,7 @@ local Runtime = PE.Runtime
 Runtime.state      = Runtime.state      or "idle"
 Runtime.cooldowns  = Runtime.cooldowns  or {}
 Runtime._wasAFK    = Runtime._wasAFK    or false
+Runtime._isAFK     = Runtime._isAFK     or false
 
 ----------------------------------------------------
 -- Event frame
@@ -83,6 +84,10 @@ local function Persona_IdleOnUpdate(self, elapsed)
     if Runtime.state ~= "idle" then
         return
     end
+	
+	if Runtime._isAFK then 
+		return 
+	end
 
     local now = GetTime()
     if now < idleNextAt then
@@ -105,18 +110,23 @@ f:SetScript("OnUpdate", Persona_IdleOnUpdate)
 -- AFK transition handler
 ----------------------------------------------------
 local function HandleAFKChange()
-    local isAFK  = UnitIsAFK("player")
-    local wasAFK = Runtime._wasAFK or false
+    local isAFK  = UnitIsAFK("player") and true or false
+    local wasAFK = Runtime._isAFK or false
 
+    -- Update flags FIRST so PE.CanSpeak sees AFK correctly
+    Runtime._isAFK  = isAFK
+    Runtime._wasAFK = isAFK
+
+    -- Optional: only fire AFK_WARNING on first enter
     if isAFK and not wasAFK then
-        -- Transition: NOT AFK → AFK
         if Runtime.TriggerEvent then
-            Runtime.TriggerEvent("AFK_WARNING", {})
+            Runtime.TriggerEvent("AFK_WARNING", {
+                cfg = nil,  -- placeholder in case you later add per-event cfg
+            })
         end
     end
-
-    Runtime._wasAFK = isAFK
 end
+
 
 ----------------------------------------------------
 -- Main event handler

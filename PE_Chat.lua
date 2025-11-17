@@ -99,6 +99,7 @@ local function PersonaEngine_HandleChatEvent(self, event, msg, author, ...)
         end
 
         -- Direct whisper needs a target; we use the base API here.
+		if not PE.CanSpeak() then return end
         SendChatMessage(phrase, "WHISPER", nil, target)
         return
     end

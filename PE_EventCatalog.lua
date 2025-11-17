@@ -35,7 +35,7 @@ local defaultStateEvents = {
             phraseKey = "NPC_TALK",
         },
         AFK_WARNING = {
-            enabled  = true,
+            enabled  = false,
             phraseKey = "AFK_WARNING",
         },
     },
