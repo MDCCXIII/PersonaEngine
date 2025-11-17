@@ -3,21 +3,31 @@
 -- Bridges Blizzard events into PersonaEngine events
 -- ##################################################
 
-local MODULE  = "EventBridge"
-local PE      = PE
-local Runtime = PE.Runtime
+local MODULE = "EventBridge"
+
+-- Root PE table should be defined in PE_Globals.lua
+local PE = PE
+if not PE or type(PE) ~= "table" then
+    print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
+    return
+end
 
 if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
 
-Runtime.state      = Runtime.state or "idle"
-Runtime.cooldowns  = Runtime.cooldowns or {}
-Runtime._wasAFK    = Runtime._wasAFK or false
+-- Ensure runtime container exists (field only, no new globals)
+PE.Runtime = PE.Runtime or {}
+local Runtime = PE.Runtime
+
+Runtime.state      = Runtime.state      or "idle"
+Runtime.cooldowns  = Runtime.cooldowns  or {}
+Runtime._wasAFK    = Runtime._wasAFK    or false
 
 ----------------------------------------------------
 -- Event frame
 ----------------------------------------------------
+
 local f = CreateFrame("Frame")
 Runtime.eventFrame = f
 
@@ -35,6 +45,7 @@ f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 -- Idle scheduler: random CHARACTER_IDLE musings
 -- Fires between ~90s and ~10min of idle time
 ----------------------------------------------------
+
 local idleNextAt = nil
 
 local function Persona_ScheduleNextIdle()
@@ -66,7 +77,9 @@ local function Persona_IdleOnUpdate(self, elapsed)
     end
 
     -- Time's up: ask EventEngine to try CHARACTER_IDLE
-    Runtime.TriggerEvent("CHARACTER_IDLE", {})
+    if Runtime.TriggerEvent then
+        Runtime.TriggerEvent("CHARACTER_IDLE", {})
+    end
 
     -- Whether or not it actually spoke (cooldown may block),
     -- schedule the next window.
@@ -78,13 +91,16 @@ f:SetScript("OnUpdate", Persona_IdleOnUpdate)
 ----------------------------------------------------
 -- AFK transition handler
 ----------------------------------------------------
+
 local function HandleAFKChange()
     local isAFK  = UnitIsAFK("player")
     local wasAFK = Runtime._wasAFK or false
 
     if isAFK and not wasAFK then
         -- Transition: NOT AFK → AFK
-        Runtime.TriggerEvent("AFK_WARNING", {})
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("AFK_WARNING", {})
+        end
     end
 
     Runtime._wasAFK = isAFK
@@ -93,38 +109,51 @@ end
 ----------------------------------------------------
 -- Main event handler
 ----------------------------------------------------
+
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
-        if UnitAffectingCombat("player") then
-            Runtime.SetState("combat")
-        else
-            Runtime.SetState("idle")
+        if Runtime.SetState then
+            if UnitAffectingCombat("player") then
+                Runtime.SetState("combat")
+            else
+                Runtime.SetState("idle")
+            end
         end
 
     elseif event == "PLAYER_REGEN_DISABLED" then
-        Runtime.SetState("combat")
-        Runtime.TriggerEvent("ENTERING_COMBAT", {})
+        if Runtime.SetState then
+            Runtime.SetState("combat")
+        end
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("ENTERING_COMBAT", {})
+        end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
-        Runtime.SetState("idle")
+        if Runtime.SetState then
+            Runtime.SetState("idle")
+        end
         Persona_ScheduleNextIdle()
 
     elseif event == "UNIT_HEALTH" then
         local unit = ...
-        if unit ~= "player" then return end
+        if unit ~= "player" then
+            return
+        end
 
         local hp  = UnitHealth("player")
         local max = UnitHealthMax("player")
-        if max <= 0 then return end
+        if max <= 0 then
+            return
+        end
 
         local pct = hp / max
 
         local threshold = 0.35
-        if PE and PE.Config and PE.Config.db and PE.Config.db.lowHealthThreshold then
+        if PE.Config and PE.Config.db and PE.Config.db.lowHealthThreshold then
             threshold = PE.Config.db.lowHealthThreshold
         end
 
-        if pct <= threshold then
+        if pct <= threshold and Runtime.TriggerEvent then
             Runtime.TriggerEvent("LOW_HEALTH", {
                 hpPercent = pct,
                 hp        = hp,
@@ -134,18 +163,22 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "CHAT_MSG_WHISPER" then
         local msg, sender = ...
-        Runtime.TriggerEvent("FRIEND_WHISPER", {
-            message = msg,
-            sender  = sender,
-        })
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("FRIEND_WHISPER", {
+                message = msg,
+                sender  = sender,
+            })
+        end
 
     elseif event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_YELL" then
         local msg, sender = ...
-        Runtime.TriggerEvent("NPC_TALK", {
-            message = msg,
-            sender  = sender,
-            channel = (event == "CHAT_MSG_MONSTER_YELL") and "YELL" or "SAY",
-        })
+        if Runtime.TriggerEvent then
+            Runtime.TriggerEvent("NPC_TALK", {
+                message = msg,
+                sender  = sender,
+                channel = (event == "CHAT_MSG_MONSTER_YELL") and "YELL" or "SAY",
+            })
+        end
 
     elseif event == "PLAYER_FLAGS_CHANGED" then
         local unit = ...
@@ -154,9 +187,11 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
 
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        local timestamp, subevent, _, srcGUID, srcName, srcFlags, _, dstGUID, dstName, dstFlags, _,
-              spellId, spellName, _, amount =
-            CombatLogGetCurrentEventInfo()
+        local timestamp, subevent, _,
+              srcGUID, srcName, srcFlags, _,
+              dstGUID, dstName, dstFlags, _,
+              spellId, spellName, _,
+              amount = CombatLogGetCurrentEventInfo()
 
         if subevent ~= "SPELL_HEAL" and subevent ~= "SPELL_PERIODIC_HEAL" then
             return
@@ -168,14 +203,16 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
 
         local maxHP = UnitHealthMax("player")
-        if maxHP <= 0 then return end
+        if maxHP <= 0 then
+            return
+        end
 
         amount = amount or 0
         local frac = amount / maxHP
 
-        local cfg = (PE and PE.Config and PE.Config.db) and PE.Config.db or {}
-        local healThreshold     = cfg.healThreshold     or 0.10  -- external
-        local selfHealThreshold = cfg.selfHealThreshold or 0.15  -- self
+        local cfg = (PE.Config and PE.Config.db) and PE.Config.db or {}
+        local healThreshold     = cfg.healThreshold     or 0.10 -- external
+        local selfHealThreshold = cfg.selfHealThreshold or 0.15 -- self
 
         local isSelf = (srcGUID == playerGUID)
 
@@ -184,29 +221,34 @@ f:SetScript("OnEvent", function(self, event, ...)
             if subevent == "SPELL_PERIODIC_HEAL" then
                 return
             end
+
             -- Only big self-heals
             if frac < selfHealThreshold then
                 return
             end
 
-            Runtime.TriggerEvent("SELF_HEAL", {
-                sourceName = srcName,
-                amount     = amount,
-                spellId    = spellId,
-                spellName  = spellName,
-            })
+            if Runtime.TriggerEvent then
+                Runtime.TriggerEvent("SELF_HEAL", {
+                    sourceName = srcName,
+                    amount     = amount,
+                    spellId    = spellId,
+                    spellName  = spellName,
+                })
+            end
         else
             -- Only react to meaningful external heals
             if frac < healThreshold then
                 return
             end
 
-            Runtime.TriggerEvent("HEAL_INCOMING", {
-                sourceName = srcName,
-                amount     = amount,
-                spellId    = spellId,
-                spellName  = spellName,
-            })
+            if Runtime.TriggerEvent then
+                Runtime.TriggerEvent("HEAL_INCOMING", {
+                    sourceName = srcName,
+                    amount     = amount,
+                    spellId    = spellId,
+                    spellName  = spellName,
+                })
+            end
         end
     end
 end)
@@ -214,11 +256,14 @@ end)
 ----------------------------------------------------
 -- Module registration
 ----------------------------------------------------
+
 if PE.LogInit then
     PE.LogInit(MODULE)
 end
 
-PE.RegisterModule("EventBridge", {
-    name  = "WoW Event Bridge",
-    class = "engine",
-})
+if PE.RegisterModule then
+    PE.RegisterModule(MODULE, {
+        name  = "WoW Event Bridge",
+        class = "engine",
+    })
+end
