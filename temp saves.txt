@@ -34,3 +34,9 @@ https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Taint.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_VFX.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_WoWEventBridge.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PersonaEngine.toc
+
+
+We are still working through all the files in the repo in load order as defined by the toc 
+
+We are hardening, cleaning, fixing 
+especially trying to prevent taint
