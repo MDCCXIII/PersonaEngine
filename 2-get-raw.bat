@@ -4,28 +4,58 @@ setlocal enabledelayedexpansion
 REM Go to the folder this script is in (repo root)
 pushd "%~dp0" >nul 2>&1
 
-REM Capture repo root for relative paths
-set "root=%CD%"
+REM Base URL for raw GitHub content
+set "BASE=https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master"
 
 REM Temp file to assemble the URL list
 set "tmp=%TEMP%\personaengine_raw_urls.txt"
 if exist "%tmp%" del "%tmp%"
 
-REM Collect all .lua and .toc files recursively
-for /r %%F in (*.lua *.toc) do (
-    set "rel=%%F"
-    REM Strip the repo root prefix from the full path
-    set "rel=!rel:%root%\=!"
-    REM Convert backslashes to forward slashes for URLs
-    set "rel=!rel:\=/!"
-    echo https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/!rel!>>"%tmp%"
+REM Ensure the .toc exists
+if not exist "PersonaEngine.toc" (
+    echo PersonaEngine.toc not found in %CD%
+    goto :done
 )
 
-REM Copy the full list to clipboard
+REM 1) Start with the .toc itself
+echo %BASE%/PersonaEngine.toc>"%tmp%"
+
+REM 2) Follow load order from the .toc
+REM    - Skip empty lines
+REM    - Skip comment lines starting with "##"
+REM    - Only include lines that end with .lua
+
+for /f "usebackq tokens=* delims=" %%L in ("PersonaEngine.toc") do (
+    set "line=%%L"
+
+    REM Trim leading spaces
+    for /f "tokens=* delims= " %%X in ("!line!") do set "line=%%X"
+
+    REM Skip empty lines
+    if not "!line!"=="" (
+
+        REM Skip comments (## ...)
+        if /I not "!line:~,2!"=="##" (
+
+            REM Only process .lua entries
+            if /I "!line:~-4!"==".lua" (
+                set "rel=!line!"
+
+                REM Convert backslashes (if any) to forward slashes
+                set "rel=!rel:\=/!"
+
+                echo %BASE%/!rel!>>"%tmp%"
+            )
+        )
+    )
+)
+
+REM 3) Copy the full ordered list to clipboard
 type "%tmp%" | clip
 
-REM Optional: clean up temp file
+REM 4) Cleanup
 del "%tmp%" >nul 2>&1
 
+:done
 popd >nul 2>&1
 endlocal
