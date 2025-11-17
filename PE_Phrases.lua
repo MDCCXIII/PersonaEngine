@@ -1,16 +1,28 @@
+-- ##################################################
 -- PE_Phrases.lua
+-- Static + dynamic phrase registry + selection API
+-- ##################################################
+
+local PE = PE
+if not PE then
+    print("|cffff0000[PersonaEngine] PE_Phrases.lua loaded without PE core!|r")
+    return
+end
+
 local MODULE = "Phrases"
-PE.LogLoad(MODULE)
+if PE.LogLoad then
+    PE.LogLoad(MODULE)
+end
 
-
-local PE      = PE
-local Phrases = PE.Phrases
+-- Ensure module table exists under PE
+local Phrases = PE.Phrases or {}
+PE.Phrases = Phrases
 
 Phrases.registry = Phrases.registry or {}
 
-------------------------------------------------
+-- ##################################################
 -- Static + dynamic definitions per phraseKey
-------------------------------------------------
+-- ##################################################
 
 Phrases.registry["LOW_HEALTH"] = {
     static = {
@@ -60,7 +72,6 @@ Phrases.registry["SELF_HEAL"] = {
     staticWeight  = 1,
     dynamicWeight = 2,
 }
-
 
 Phrases.registry["FRIEND_WHISPER"] = {
     static = {
@@ -145,31 +156,47 @@ Phrases.registry["MOUNT_X53_ROCKET"] = {
     dynamic = {
         "TECH_IDLE_SNARK",
     },
-    staticWeight  = 3,  -- mostly the tailored rocket lines
-    dynamicWeight = 1,  -- sometimes a more free-form snark line
+    staticWeight  = 3, -- mostly the tailored rocket lines
+    dynamicWeight = 1, -- sometimes a more free-form snark line
 }
 
-
-------------------------------------------------
+-- ##################################################
 -- Selection helpers
-------------------------------------------------
+-- ##################################################
+
+local random = math.random
 
 local function randFrom(t)
-    return t[math.random(#t)]
+    if not t or #t == 0 then
+        return nil
+    end
+    return t[random(#t)]
 end
 
 local function chooseMode(entry)
-    local sw = entry.staticWeight  or ((entry.static  and #entry.static  > 0) and 1 or 0)
-    local dw = entry.dynamicWeight or ((entry.dynamic and #entry.dynamic > 0) and 0 or 0)
+    if not entry then return nil end
+
+    local hasStatic  = entry.static  and #entry.static  > 0
+    local hasDynamic = entry.dynamic and #entry.dynamic > 0
+
+    local sw = entry.staticWeight
+    if sw == nil then
+        sw = hasStatic and 1 or 0
+    end
+
+    local dw = entry.dynamicWeight
+    if dw == nil then
+        dw = hasDynamic and 0 or 0
+    end
 
     local total = sw + dw
     if total <= 0 then
-        if entry.static and #entry.static > 0 then return "static" end
-        if entry.dynamic and #entry.dynamic > 0 then return "dynamic" end
+        if hasStatic  then return "static"  end
+        if hasDynamic then return "dynamic" end
         return nil
     end
 
-    local roll = math.random() * total
+    local roll = random() * total
     if roll <= sw then
         return "static"
     else
@@ -177,35 +204,84 @@ local function chooseMode(entry)
     end
 end
 
--- Public API: pick a fully built line for this phraseKey
+-- ##################################################
+-- Public API: pick a fully built line for phraseKey
+-- ##################################################
+
 function Phrases.PickLine(phraseKey, ctx, stateId, eventId)
     local entry = Phrases.registry[phraseKey]
-    if not entry then return nil end
+    if not entry then
+        if PE.Log then
+            PE.Log(4, "[Phrases] No registry entry for key:", tostring(phraseKey))
+        end
+        return nil
+    end
 
     local mode = chooseMode(entry)
-    if not mode then return nil end
+    if not mode then
+        return nil
+    end
 
     local line
 
     if mode == "static" then
         local pool = entry.static
-        if not pool or #pool == 0 then return nil end
+        if not pool or #pool == 0 then
+            return nil
+        end
         line = randFrom(pool)
+
     elseif mode == "dynamic" then
         local dynList = entry.dynamic
-        if not dynList or #dynList == 0 then return nil end
+        if not dynList or #dynList == 0 then
+            return nil
+        end
+
         local genId = randFrom(dynList)
-        local gen   = PE.DynamicPhrases[genId]
-        if not gen then return nil end
-        line = gen(ctx, stateId, eventId)
+        if not genId then
+            return nil
+        end
+
+        local dynTable = PE.DynamicPhrases
+        if not dynTable then
+            if PE.Log then
+                PE.Log(2, "[Phrases] DynamicPhrases table not available; key:", genId)
+            end
+            return nil
+        end
+
+        local gen = dynTable[genId]
+        if not gen then
+            if PE.Log then
+                PE.Log(2, "[Phrases] Missing dynamic generator:", genId)
+            end
+            return nil
+        end
+
+        local ok, result = pcall(gen, ctx, stateId, eventId)
+        if not ok then
+            if PE.Log then
+                PE.Log(1, "[Phrases] Error in dynamic generator", genId, ":", result)
+            end
+            return nil
+        end
+        line = result
     end
 
     return line
 end
 
-PE.LogInit(MODULE)
-PE.RegisterModule("Phrases", {
-    name  = "Phrase Registry",
-    class = "data",
-})
+-- ##################################################
+-- Module registration
+-- ##################################################
 
+if PE.LogInit then
+    PE.LogInit(MODULE)
+end
+
+if PE.RegisterModule then
+    PE.RegisterModule("Phrases", {
+        name  = "Phrase Registry",
+        class = "data",
+    })
+end
