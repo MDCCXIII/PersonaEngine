@@ -12,7 +12,12 @@ PE_Globals.lua
 PE_Core.lua
 PE_Taint.lua
 
-# Text / language systems
+# Mood / NPC memory / persona language engine
+PE_Mood.lua
+PE_NPCMemory.lua
+PE_PersonaLanguage.lua
+
+# Text / language systems (legacy phrase data, structures, inflections)
 PE_Phrases.lua
 PE_SentenceStructures.lua
 PE_Inflections.lua
