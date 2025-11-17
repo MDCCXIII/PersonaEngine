@@ -5,7 +5,7 @@ REM ===== Settings =====
 set BRANCH=master
 
 REM Go to the folder this script is in (your repo root)
-cd /d "%~dp0"
+pushd "%~dp0" >nul 2>&1
 
 echo.
 echo 🌐 Fetching latest from remote...
