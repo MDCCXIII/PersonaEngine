@@ -3,29 +3,52 @@
 -- Live taint monitoring + on-demand taint report
 -- ##################################################
 
+-- PE should already be created by core before this module loads.
 local PE = PE
+if not PE then
+    -- Hard guard: if this ever fires, load order is broken.
+    print("|cffff0000[PersonaEngine] PE_Taint.lua loaded without PE core!|r")
+    return
+end
+
 local MODULE = "Taint"
 
 if PE.LogLoad then
     PE.LogLoad(MODULE)
-else
-    -- Failsafe
-    if PE.Log then PE.Log(4, "[PersonaEngine] Loading Taint module...") end
+elseif PE.Log then
+    PE.Log(4, "[PersonaEngine] Loading Taint module...")
 end
 
+-- Module table (kept under PE, not as a global)
 local Taint = PE.Taint or {}
 PE.Taint = Taint
 
-Taint.logs    = Taint.logs or {}
-Taint.maxLogs = 200
+-- State -----------------------------------------------------------------------
 
-----------------------------------------------------
+Taint.logs    = Taint.logs or {}
+Taint.maxLogs = Taint.maxLogs or 200
+
+-- Upvalue frequently-used globals for perf / clarity
+local date        = date
+local CreateFrame = CreateFrame
+local ipairs      = ipairs
+local pairs       = pairs
+local pcall       = pcall
+local print       = print
+local tostring    = tostring
+local tinsert     = table.insert
+local tremove     = table.remove
+local _G          = _G
+
+-- ##################################################
 -- Internal logging
-----------------------------------------------------
+-- ##################################################
+
 local function Taint_AddLog(event, addon, info)
-    local ts   = date("%H:%M:%S")
-    addon      = addon or "UNKNOWN"
-    info       = info or ""
+    local ts = date("%H:%M:%S")
+
+    addon = addon or "UNKNOWN"
+    info  = info or ""
 
     local entry = {
         time  = ts,
@@ -34,23 +57,34 @@ local function Taint_AddLog(event, addon, info)
         info  = tostring(info),
     }
 
-    table.insert(Taint.logs, 1, entry) -- newest first
+    -- newest first
+    tinsert(Taint.logs, 1, entry)
     if #Taint.logs > Taint.maxLogs then
-        table.remove(Taint.logs)       -- drop oldest
+        tremove(Taint.logs) -- drop oldest
     end
 
     if PE.Log then
-        if addon == "PersonaEngine" or info:find("PersonaEngine") then
+        if addon == "PersonaEngine" or tostring(info):find("PersonaEngine") then
+            -- PersonaEngine-related taint -> elevate to ERROR
             PE.Log(1, "[TAINT]", event, addon, info)
         else
+            -- everything else -> DEBUG-ish
             PE.Log(4, "[TAINT]", event, addon, info)
+        end
+    end
+
+    -- If the monitor panel is visible, keep it live-updating
+    if Taint._monitorFrame and Taint._monitorFrame:IsShown() then
+        if Taint._RefreshMonitor then
+            Taint._RefreshMonitor()
         end
     end
 end
 
-----------------------------------------------------
+-- ##################################################
 -- Event listener for taint-related events
-----------------------------------------------------
+-- ##################################################
+
 local frame = CreateFrame("Frame")
 Taint.frame = frame
 
@@ -58,20 +92,33 @@ frame:RegisterEvent("ADDON_ACTION_BLOCKED")
 frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 frame:RegisterEvent("MACRO_ACTION_BLOCKED")
 
-frame:SetScript("OnEvent", function(self, event, arg1, arg2)
+frame:SetScript("OnEvent", function(_, event, arg1, arg2)
     -- arg1 = addon, arg2 = func/info (varies by event)
     Taint_AddLog(event, arg1, arg2)
 end)
 
-----------------------------------------------------
+-- ##################################################
 -- Runtime scan of PE namespace for "suspicious" links
-----------------------------------------------------
+-- ##################################################
+
 local protectedFuncs = {
-    "CastSpell", "CastSpellByName", "UseAction", "UseItem", "UseInventoryItem",
-    "PickupSpell", "PickupItem", "PickupPetAction",
-    "SpellStopCasting", "SpellStopTargeting", "SpellTargetUnit",
-    "TargetUnit", "TargetNearest", "TargetEnemy", "TargetFriend",
-    "FocusUnit", "ClearFocus",
+    "CastSpell",
+    "CastSpellByName",
+    "UseAction",
+    "UseItem",
+    "UseInventoryItem",
+    "PickupSpell",
+    "PickupItem",
+    "PickupPetAction",
+    "SpellStopCasting",
+    "SpellStopTargeting",
+    "SpellTargetUnit",
+    "TargetUnit",
+    "TargetNearest",
+    "TargetEnemy",
+    "TargetFriend",
+    "FocusUnit",
+    "ClearFocus",
 }
 
 local protectedTemplates = {
@@ -83,16 +130,19 @@ local protectedTemplates = {
 
 local function Taint_ScanPersonaNamespace()
     local results = {
-        funcRefs   = {},
-        frames     = {},
-        templates  = {},
+        funcRefs = {},
+        frames   = {},
+        templates = {},
     }
 
     -- 1) Check if any PE fields reference protected functions
     for key, value in pairs(PE) do
         for _, fname in ipairs(protectedFuncs) do
-            if value == _G[fname] then
-                table.insert(results.funcRefs, ("PE.%s -> %s"):format(tostring(key), fname))
+            local gFunc = _G[fname]
+            if gFunc and value == gFunc then
+                tinsert(results.funcRefs,
+                    ("PE.%s -> %s"):format(tostring(key), fname)
+                )
             end
         end
 
@@ -110,8 +160,12 @@ local function Taint_ScanPersonaNamespace()
                 end
 
                 if isProtected then
-                    table.insert(results.frames,
-                        ("PE.%s is a protected %s frame"):format(tostring(key), tostring(objType)))
+                    tinsert(results.frames,
+                        ("PE.%s is a protected %s frame"):format(
+                            tostring(key),
+                            tostring(objType)
+                        )
+                    )
                 end
             end
         end
@@ -120,16 +174,17 @@ local function Taint_ScanPersonaNamespace()
     -- 3) Look for direct global template references (paranoia)
     for _, tmpl in ipairs(protectedTemplates) do
         if _G[tmpl] then
-            table.insert(results.templates, tmpl)
+            tinsert(results.templates, tmpl)
         end
     end
 
     return results
 end
 
-----------------------------------------------------
+-- ##################################################
 -- Public: dump taint report to chat
-----------------------------------------------------
+-- ##################################################
+
 function Taint.DumpReport()
     local prefix = "|cff66ccff[PersonaEngine:Taint]|r "
 
@@ -138,7 +193,9 @@ function Taint.DumpReport()
     local peHits = 0
 
     for _, e in ipairs(Taint.logs) do
-        if e.addon == "PersonaEngine" or e.info:find("PersonaEngine") then
+        if e.addon == "PersonaEngine"
+            or (e.info and e.info:find("PersonaEngine"))
+        then
             peHits = peHits + 1
         end
     end
@@ -151,8 +208,12 @@ function Taint.DumpReport()
         print(prefix .. "Most recent taint events:")
         for i = 1, math.min(5, total) do
             local e = Taint.logs[i]
-            print(("  [%s] %s - %s (%s)"):format(
-                e.time, e.event, e.addon, e.info))
+            print(("[ %s] %s - %s (%s)"):format(
+                e.time or "??",
+                e.event or "UNKNOWN",
+                e.addon or "UNKNOWN",
+                e.info or ""
+            ))
         end
     end
 
@@ -178,17 +239,22 @@ function Taint.DumpReport()
     end
 end
 
-----------------------------------------------------
+-- ##################################################
 -- Simple scrollable taint monitor panel
-----------------------------------------------------
+-- ##################################################
+
 local monitorFrame, monitorScroll, monitorEditBox
 
 local function Taint_BuildTextBlob()
     local out = {}
 
-    for i, e in ipairs(Taint.logs) do
-        out[#out+1] = ("[%s] %s - %s (%s)"):format(
-            e.time, e.event, e.addon, e.info)
+    for _, e in ipairs(Taint.logs) do
+        out[#out + 1] = ("[%s] %s - %s (%s)"):format(
+            e.time or "??",
+            e.event or "UNKNOWN",
+            e.addon or "UNKNOWN",
+            e.info or ""
+        )
     end
 
     if #out == 0 then
@@ -216,8 +282,10 @@ local function Taint_EnsureMonitorFrame()
     monitorFrame:SetBackdrop({
         bgFile   = "Interface/Tooltips/UI-Tooltip-Background",
         edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left=3, right=3, top=3, bottom=3 },
+        tile     = true,
+        tileSize = 16,
+        edgeSize = 12,
+        insets   = { left = 3, right = 3, top = 3, bottom = 3 },
     })
     monitorFrame:SetBackdropColor(0, 0, 0, 0.9)
 
@@ -235,7 +303,6 @@ local function Taint_EnsureMonitorFrame()
     monitorEditBox:SetAutoFocus(false)
     monitorEditBox:EnableMouse(true)
     monitorEditBox:SetWidth(450)
-
     monitorEditBox:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
     end)
@@ -244,6 +311,9 @@ local function Taint_EnsureMonitorFrame()
 
     local close = CreateFrame("Button", nil, monitorFrame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", monitorFrame, "TOPRIGHT")
+
+    -- Stash for internal refresh logic
+    Taint._monitorFrame = monitorFrame
 
     return monitorFrame
 end
@@ -259,27 +329,23 @@ local function Taint_RefreshMonitor()
     monitorScroll:SetVerticalScroll(0)
 end
 
+-- expose refresh for internal use
+Taint._RefreshMonitor = Taint_RefreshMonitor
+
 function Taint.ShowPanel()
     local f = Taint_EnsureMonitorFrame()
     f:Show()
     Taint_RefreshMonitor()
 end
 
-----------------------------------------------------
--- Hook: refresh monitor whenever a taint log is added
-----------------------------------------------------
-local oldAddLog = Taint_AddLog
-Taint_AddLog = function(event, addon, info)
-    oldAddLog(event, addon, info)
-    if monitorFrame and monitorFrame:IsShown() then
-        Taint_RefreshMonitor()
-    end
-end
+-- ##################################################
+-- Module registration
+-- ##################################################
 
 if PE.LogInit then
     PE.LogInit(MODULE)
-else
-    if PE.Log then PE.Log(4, "[PersonaEngine] Taint module initialized.") end
+elseif PE.Log then
+    PE.Log(4, "[PersonaEngine] Taint module initialized.")
 end
 
 PE.RegisterModule("Taint", {
