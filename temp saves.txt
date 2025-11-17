@@ -13,6 +13,9 @@ https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PersonaEngine.to
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Globals.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Core.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Taint.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Mood.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_NPCMemory.lua
+https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_PersonaLanguage.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Phrases.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_SentenceStructures.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Inflections.lua
@@ -27,9 +30,6 @@ https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Cloud9_Panel.
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_ConfigUI.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Slash.lua
 https://raw.githubusercontent.com/MDCCXIII/PersonaEngine/master/PE_Experimental.lua
-
-
-
 
 
 
