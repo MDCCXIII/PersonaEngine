@@ -160,8 +160,9 @@ end
 -- Main event handler
 ----------------------------------------------------
 f:SetScript("OnEvent", function(self, event, ...)
+    f:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
-        Persona_OnLogin()
+        -- No Persona_OnLogin; just record activity
         Persona_RegisterActivity()
 
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -195,6 +196,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             Persona_RegisterActivity()
         end
     end
+
 	
 	if event == "PLAYER_LOGIN" then
         -- Seed state on login
