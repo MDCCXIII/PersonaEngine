@@ -94,11 +94,23 @@ Phrases.registry["NPC_TALK"] = {
     dynamicWeight = 2,
 }
 
+-- Fired when the player RETURNS from AFK.
 Phrases.registry["AFK_WARNING"] = {
+    static = {
+        "System resume complete. I may or may not have dreamt in binary.",
+        "Whoops… brain suspended itself. Rebooting cognition now.",
+        "Temporal gap detected. Assuming nothing important exploded.",
+        "I was buffering reality. Back online!",
+        "Alert: consciousness restored. Where were we?",
+    },
+
+    -- Optional: keep TECH_IDLE_SNARK if you like occasional tech-flavored reactions.
     dynamic = {
         "TECH_IDLE_SNARK",
     },
-    staticWeight  = 0,
+
+    -- Weights: static lines are preferred, dynamic ones sometimes spice it up.
+    staticWeight  = 2,
     dynamicWeight = 1,
 }
 
