@@ -431,7 +431,7 @@ local function BuildConfigFrame()
         "UIPanelScrollFrameTemplate,BackdropTemplate"
     )
     phraseScroll:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", -4, -6)
-    phraseScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -28, 130)
+    phraseScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 130)
     ApplyBorder(phraseScroll)
 
     local phraseEdit = CreateFrame("EditBox", nil, phraseScroll)
@@ -442,28 +442,24 @@ local function BuildConfigFrame()
     phraseEdit:SetJustifyV("TOP")
     phraseScroll:SetScrollChild(phraseEdit)
 
-    -- Resize logic: width follows scrollframe; height follows text
-    local function UpdatePhraseLayout()
-        local w = math.max(0, phraseScroll:GetWidth() - 12)
+    local function SizePhraseEdit()
+        local w = math.max(0, phraseScroll:GetWidth() - 20)
         phraseEdit:SetWidth(w)
-        local textHeight = phraseEdit:GetTextHeight() or 0
-        if textHeight < 20 then
-            textHeight = phraseScroll:GetHeight() - 12
-        end
-        phraseEdit:SetHeight(textHeight + 16)
+        -- Big enough to always have something to scroll
+        phraseEdit:SetHeight(800)
         phraseScroll:UpdateScrollChildRect()
     end
 
     phraseScroll:SetScript("OnSizeChanged", function()
-        UpdatePhraseLayout()
+        SizePhraseEdit()
     end)
 
     phraseEdit:SetScript("OnTextChanged", function()
-        UpdatePhraseLayout()
+        -- No dynamic height; just keep scroll rect in sync
+        phraseScroll:UpdateScrollChildRect()
     end)
 
-    -- Initial layout
-    UpdatePhraseLayout()
+    SizePhraseEdit()
 
     configFrame.phraseEdit   = phraseEdit
     configFrame.phraseScroll = phraseScroll
@@ -479,7 +475,7 @@ local function BuildConfigFrame()
         "UIPanelScrollFrameTemplate,BackdropTemplate"
     )
     macroScroll:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 40)
-    macroScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -28, 40)
+    macroScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 40)
     macroScroll:SetHeight(60)  -- ~3 lines high
     ApplyBorder(macroScroll)
 
@@ -495,23 +491,19 @@ local function BuildConfigFrame()
     macroEdit:SetJustifyV("TOP")
     macroScroll:SetScrollChild(macroEdit)
 
-    local function UpdateMacroLayout()
-        local w = math.max(0, macroScroll:GetWidth() - 12)
+    local function SizeMacroEdit()
+        local w = math.max(0, macroScroll:GetWidth() - 20)
         macroEdit:SetWidth(w)
-        local textHeight = macroEdit:GetTextHeight() or 0
-        if textHeight < 20 then
-            textHeight = macroScroll:GetHeight() - 12
-        end
-        macroEdit:SetHeight(textHeight + 16)
+        macroEdit:SetHeight(200)
         macroScroll:UpdateScrollChildRect()
     end
 
     macroScroll:SetScript("OnSizeChanged", function()
-        UpdateMacroLayout()
+        SizeMacroEdit()
     end)
 
     macroEdit:SetScript("OnTextChanged", function()
-        UpdateMacroLayout()
+        macroScroll:UpdateScrollChildRect()
     end)
 
     macroEdit:SetScript("OnEditFocusGained", function(self)
@@ -522,7 +514,7 @@ local function BuildConfigFrame()
         self:ClearFocus()
     end)
 
-    UpdateMacroLayout()
+    SizeMacroEdit()
     configFrame.macroEdit = macroEdit
 
     ------------------------------------------------
