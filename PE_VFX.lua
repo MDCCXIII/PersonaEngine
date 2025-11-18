@@ -27,7 +27,7 @@ local GLOW_ON_MIN_ALPHA        = 0.20  -- how dim the pulse gets
 
 -- How fast the pulse animates (seconds)
 local GLOW_FADE_OUT_DURATION   = 2.0   -- bright -> dim
-local GLOW_FADE_IN_DURATION    = 2.0  -- dim -> bright
+local GLOW_FADE_IN_DURATION    = 2.0   -- dim -> bright
 local GLOW_PAUSE_AT_MIN        = 0.5   -- optional pause at dim end
 
 -- When SR_On == 0 (engine disabled), the icon is dim + static
@@ -54,58 +54,81 @@ local function PersonaEngine_SetupButtonVisuals()
         local ag = tex:CreateAnimationGroup()
         ag:SetLooping("REPEAT")
 
-        -- Fade from bright to dim
+        -- Order 1: fade from bright to dim
         local fadeOut = ag:CreateAnimation("Alpha")
+        fadeOut:SetOrder(1)
         fadeOut:SetFromAlpha(GLOW_ON_MAX_ALPHA)
         fadeOut:SetToAlpha(GLOW_ON_MIN_ALPHA)
         fadeOut:SetDuration(GLOW_FADE_OUT_DURATION)
         fadeOut:SetSmoothing("IN_OUT")
 
-        -- Fade from dim back to bright
+        -- Order 2: pause at dim (if desired) by doing a no-op alpha animation
+        if GLOW_PAUSE_AT_MIN > 0 then
+            local pause = ag:CreateAnimation("Alpha")
+            pause:SetOrder(2)
+            pause:SetFromAlpha(GLOW_ON_MIN_ALPHA)
+            pause:SetToAlpha(GLOW_ON_MIN_ALPHA)
+            pause:SetDuration(GLOW_PAUSE_AT_MIN)
+        end
+
+        -- Order 3: fade from dim back to bright
         local fadeIn = ag:CreateAnimation("Alpha")
+        fadeIn:SetOrder(3)
         fadeIn:SetFromAlpha(GLOW_ON_MIN_ALPHA)
         fadeIn:SetToAlpha(GLOW_ON_MAX_ALPHA)
         fadeIn:SetDuration(GLOW_FADE_IN_DURATION)
         fadeIn:SetSmoothing("IN_OUT")
-        fadeIn:SetStartDelay(GLOW_PAUSE_AT_MIN)
 
         tex.PersonaEngineAG = ag
     end
 
     ------------------------------------------------
     -- Watch SR_On and start/stop the animation
+    -- IMPORTANT: we do NOT touch alpha while the
+    -- animation is running; we only adjust color
+    -- and alpha when OFF.
     ------------------------------------------------
     if not btn.PersonaEngineWatcher then
         local watcher = CreateFrame("Frame", nil, btn)
+        local lastSR  = nil
+
         watcher:SetScript("OnUpdate", function()
             local ag = tex.PersonaEngineAG
+            local sr = (SR_On == 1)
 
-            if SR_On == 1 then
-                -- ON: bright + pulsing
-                tex:SetVertexColor(
-                    ICON_ON_VERTEX_COLOR.r,
-                    ICON_ON_VERTEX_COLOR.g,
-                    ICON_ON_VERTEX_COLOR.b
-                )
-                tex:SetAlpha(GLOW_ON_MAX_ALPHA)
+            if sr ~= lastSR then
+                lastSR = sr
 
-                if ag and not ag:IsPlaying() then
-                    ag:Play()
+                if sr then
+                    -- Turn ON: set color, let animation control alpha
+                    tex:SetVertexColor(
+                        ICON_ON_VERTEX_COLOR.r,
+                        ICON_ON_VERTEX_COLOR.g,
+                        ICON_ON_VERTEX_COLOR.b
+                    )
+
+                    -- Start at max alpha and let fadeOut run
+                    tex:SetAlpha(GLOW_ON_MAX_ALPHA)
+
+                    if ag and not ag:IsPlaying() then
+                        ag:Play()
+                    end
+                else
+                    -- Turn OFF: stop animation and set static dim state
+                    if ag and ag:IsPlaying() then
+                        ag:Stop()
+                    end
+
+                    tex:SetVertexColor(
+                        ICON_OFF_VERTEX_COLOR.r,
+                        ICON_OFF_VERTEX_COLOR.g,
+                        ICON_OFF_VERTEX_COLOR.b
+                    )
+                    tex:SetAlpha(ICON_OFF_ALPHA)
                 end
-            else
-                -- OFF: dim, no animation
-                if ag and ag:IsPlaying() then
-                    ag:Stop()
-                end
-
-                tex:SetVertexColor(
-                    ICON_OFF_VERTEX_COLOR.r,
-                    ICON_OFF_VERTEX_COLOR.g,
-                    ICON_OFF_VERTEX_COLOR.b
-                )
-                tex:SetAlpha(ICON_OFF_ALPHA)
             end
         end)
+
         btn.PersonaEngineWatcher = watcher
     end
 end
