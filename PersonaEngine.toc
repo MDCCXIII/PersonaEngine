@@ -21,6 +21,3 @@ PE_Icon.lua
 # config UI
 PE_ConfigUI.lua
 
-
-# Experimental playground (kept last on purpose)
-PE_Experimental.lua
