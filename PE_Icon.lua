@@ -154,6 +154,28 @@ end
 ----------------------------------------------------
 
 function PersonaEngine_Button_OnClick(self, button)
+    -- DevMode Ctrl+Left: performance/debug panel
+    if PersonaEngineDB.DevMode and IsControlKeyDown() and button == "LeftButton" then
+        if _G.PersonaEngine_TogglePerfFrame then
+            _G.PersonaEngine_TogglePerfFrame()
+        end
+        return
+    end
+
+    -- DevMode Shift-clicks: scriptErrors / reload
+    if IsShiftKeyDown() and PersonaEngineDB.DevMode then
+        if button == "LeftButton" then
+            local cur = GetCVar("scriptErrors")
+            SetCVar("scriptErrors", (cur == "1") and 0 or 1)
+            ReloadUI()
+            return
+        elseif button == "RightButton" then
+            ReloadUI()
+            return
+        end
+    end
+
+    -- Normal behavior
     if button == "LeftButton" then
         if PE.ToggleConfig then
             PE.ToggleConfig()
@@ -166,24 +188,56 @@ function PersonaEngine_Button_OnClick(self, button)
         SR_On = (old == 1 and 0 or 1)
 
         if SR_On == 1 then
-            SendChatMessage("Speech module online!", "SAY")
+            local pool = PE_EngineOnLines or {}
+            local line = (#pool > 0 and pool[math.random(#pool)]) or "Speech module online."
+            SendChatMessage(line, "SAY")
+            if PE.Log then PE.Log("|cff00ff00Persona Engine Enabled|r") end
         else
-            SendChatMessage("Speech module offline.", "SAY")
+            local offPool = PE_EngineOffLines or {}
+            local line = (#offPool > 0 and offPool[math.random(#offPool)]) or "Speech module offline."
+            SendChatMessage(line, "SAY")
+            if PE.Log then PE.Log("|cffff0000Persona Engine Disabled|r") end
+
+            local scaryPool = PE_EngineOffScaryLines or {}
+            if #scaryPool > 0 and math.random(20) == 1 then
+                local scary = scaryPool[math.random(#scaryPool)]
+                SendChatMessage(scary, "SAY")
+            end
         end
         return
     end
 end
 
 ----------------------------------------------------
--- Tooltip
+-- Tooltip (restored full version)
 ----------------------------------------------------
 
 function PersonaEngine_Button_OnTooltip(tt)
+    if not tt or not tt.AddLine then
+        return
+    end
+
     tt:ClearLines()
     tt:AddLine("Persona Engine", 1, 1, 1)
+    tt:AddLine("|cff00ff88Copporclang's Personality Core|r")
     tt:AddLine(" ")
-    tt:AddLine("Left-click: Open Config", 0.8, 0.8, 0.8)
-    tt:AddLine("Right-click: Toggle Speech", 0.8, 0.8, 0.8)
+
+    tt:AddLine("|cffffffffLeft-click:|r Open control console", 0.8, 0.8, 0.8)
+    tt:AddLine("|cffffffffRight-click:|r Toggle speech module", 0.8, 0.8, 0.8)
+
+    if PersonaEngineDB.DevMode then
+        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0)
+        tt:AddLine("|cffffffffCtrl+Left-click:|r Performance panel", 0.8, 0.8, 0.8)
+        tt:AddLine("|cffffffffShift+Left-click:|r Toggle Lua errors & reload", 0.8, 0.8, 0.8)
+        tt:AddLine("|cffffffffShift+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
+    else
+        tt:AddLine("|cffa0a0a0Shift-click: Dev features disabled|r")
+    end
+
+    tt:AddLine(" ")
+    tt:AddLine("|cffffd200Warning: Button may emit stray ideas.|r")
+
+    tt:Show()   -- <- the missing piece
 end
 
 ----------------------------------------------------
