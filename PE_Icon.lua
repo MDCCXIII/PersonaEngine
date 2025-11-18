@@ -1,6 +1,6 @@
 -- ##################################################
 -- PE_Icon.lua
--- Minimap / DataBroker launcher + draggable status button
+-- Free-floating status button (no minimap LibDBIcon)
 -- ##################################################
 
 local MODULE = "Icon"
@@ -21,20 +21,17 @@ if PE.LogLoad then
 end
 
 ----------------------------------------------------
--- LDB / LibDBIcon integration (optional)
+-- Optional LDB object (for displays like Bazooka)
+-- (No LibDBIcon registration → no minimap button)
 ----------------------------------------------------
 
-local LDB, Icon
-
+local LDB
 if LibStub then
-    LDB  = LibStub("LibDataBroker-1.1", true)
-    Icon = LibStub("LibDBIcon-1.0", true)
+    LDB = LibStub("LibDataBroker-1.1", true)
 end
 
--- LDB data source for displays (Bazooka, etc.)
-local obj
 if LDB then
-    obj = LDB:NewDataObject("PersonaEngine", {
+    LDB:NewDataObject("PersonaEngine", {
         type = "data source",
         text = "Persona Engine",
         icon = "Interface\\AddOns\\PersonaEngine\\references\\persona_brain_icon.tga",
@@ -51,10 +48,6 @@ if LDB then
             end
         end,
     })
-
-    if Icon then
-        Icon:Register("PersonaEngine", obj, PersonaEngineDB.minimap or {})
-    end
 end
 
 ----------------------------------------------------
@@ -92,13 +85,13 @@ local function PersonaEngine_CreateButton()
     btn:RegisterForDrag("LeftButton")
     btn:RegisterForClicks("AnyUp")
 
-    -- Position restore: free-floating in top-right-ish region
+    -- Position restore: free-floating near top-right
     btn:SetPoint(
         cfg.point or d.point or "TOPRIGHT",
         UIParent,
         cfg.relPoint or d.relPoint or "TOPRIGHT",
-        cfg.x or d.x or 0,
-        cfg.y or d.y or 0
+        cfg.x or d.x or -150,
+        cfg.y or d.y or -170
     )
 
     ------------------------------------------------
@@ -161,147 +154,3 @@ local function PersonaEngine_CreateButton()
     end)
 
     btn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
-    btn:SetScript("OnClick", PersonaEngine_Button_OnClick)
-
-    return btn
-end
-
--- Slight delay so SavedVariables and globals are ready
-if C_Timer and C_Timer.After then
-    C_Timer.After(0.1, PersonaEngine_CreateButton)
-else
-    PersonaEngine_CreateButton()
-end
-
-----------------------------------------------------
--- Shared click + tooltip logic (global on purpose)
-----------------------------------------------------
-
-function PersonaEngine_Button_OnClick(self, button)
-    if PersonaEngineDB.DevMode and PE.Log then
-        PE.Log(5, "|cffffff00[Debug] Click detected: button =", button,
-            "ctrl =", tostring(IsControlKeyDown()),
-            "shift =", tostring(IsShiftKeyDown()),
-            "alt =", tostring(IsAltKeyDown()))
-    end
-
-    -- DevMode Ctrl+Left: toggle perf panel
-    if PersonaEngineDB.DevMode and IsControlKeyDown() and button == "LeftButton" then
-        if _G.PersonaEngine_TogglePerfFrame then
-            _G.PersonaEngine_TogglePerfFrame()
-        end
-        return
-    end
-
-    -- DevMode shift-clicks
-    if IsShiftKeyDown() then
-        if PersonaEngineDB.DevMode then
-            if button == "LeftButton" then
-                local cur = GetCVar("scriptErrors")
-                if cur == "1" then
-                    SetCVar("scriptErrors", 0)
-                    if PE.Log then
-                        PE.Log(4, "|cff88ff88[Dev] scriptErrors = 0|r")
-                    end
-                else
-                    SetCVar("scriptErrors", 1)
-                    if PE.Log then
-                        PE.Log(4, "|cffff8888[Dev] scriptErrors = 1|r")
-                    end
-                end
-                ReloadUI()
-                return
-            elseif button == "RightButton" then
-                if PE.Log then
-                    PE.Log(4, "|cffffff00[Dev] Reloading UI...|r")
-                end
-                ReloadUI()
-                return
-            end
-        end
-        -- If DevMode is off, Shift does nothing special for now.
-    end
-
-    -- Normal clicks
-    if button == "LeftButton" then
-        if PE and PE.ToggleConfig then
-            PE.ToggleConfig()
-        end
-    elseif button == "RightButton" then
-        local wasOn = (SR_On == 1)
-        local nowOn = not wasOn
-
-        -- Toggle core flag
-        SR_On = nowOn and 1 or 0
-
-        if nowOn then
-            -- Engine enabled
-            local pool = PE_EngineOnLines or {}
-            local line = (#pool > 0 and pool[math.random(#pool)]) or "Speech module online."
-            SendChatMessage(line, "SAY")
-            if PE.Log then
-                PE.Log("|cff00ff00Persona Engine Enabled|r")
-            end
-        else
-            -- Engine disabled
-            local offPool = PE_EngineOffLines or {}
-            local line = (#offPool > 0 and offPool[math.random(#offPool)]) or "Speech module offline."
-            SendChatMessage(line, "SAY")
-            if PE.Log then
-                PE.Log("|cffff0000Persona Engine Disabled|r")
-            end
-
-            -- Rare spooky glitch line - in lore: shutdown failed
-            local scaryPool = PE_EngineOffScaryLines or {}
-            if #scaryPool > 0 and math.random(20) == 1 then
-                local scary = scaryPool[math.random(#scaryPool)]
-                SendChatMessage(scary, "SAY")
-            end
-        end
-    end
-end
-
-function PersonaEngine_Button_OnTooltip(tt)
-    if not tt or not tt.AddLine then
-        return
-    end
-
-    tt:ClearLines()
-    tt:AddLine("Persona Engine", 1, 1, 1)
-    tt:AddLine("|cff00ff88Copporclang's Personality Core|r")
-    tt:AddLine(" ")
-
-    tt:AddLine("|cffffffffLeft-click:|r Open control console", 0.8, 0.8, 0.8)
-    tt:AddLine("|cffffffffRight-click:|r Toggle speech module", 0.8, 0.8, 0.8)
-
-    if PersonaEngineDB.DevMode then
-        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0)
-        tt:AddLine("|cffffffffCtrl+Left-click:|r Performance panel", 0.8, 0.8, 0.8)
-        tt:AddLine("|cffffffffShift+Left-click:|r Toggle Lua errors & reload", 0.8, 0.8, 0.8)
-        tt:AddLine("|cffffffffShift+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
-    else
-        tt:AddLine("|cffa0a0a0Shift-click: Dev features disabled|r")
-    end
-
-    tt:AddLine(" ")
-    tt:AddLine("|cffffd200Warning: Button may emit stray ideas.|r")
-    tt:Show()
-end
-
-----------------------------------------------------
--- Module registration
-----------------------------------------------------
-
-if PE.LogInit then
-    PE.LogInit(MODULE)
-end
-
-if PE.RegisterModule then
-    PE.RegisterModule("Icon", {
-        name  = "Minimap Icon",
-        class = "ui",
-    })
-end
