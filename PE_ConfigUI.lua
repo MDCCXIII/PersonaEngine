@@ -486,16 +486,20 @@ local function BuildConfigFrame()
     local phraseScroll, phraseEdit
 
     if UI and UI.CreateMultilineEdit then
+	
+	local PHRASE_BOTTOM_OFFSET = 180  -- try 160 / 180 / 200 to taste
         phraseScroll, phraseEdit = UI.CreateMultilineEdit(actionPage, {
             name        = "PersonaEnginePhraseScroll",
             point       = { "TOPLEFT",     phraseLabel, "BOTTOMLEFT", -4, -6 },
-            point2      = { "BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, 130 },
+            point2      = { "BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, PHRASE_BOTTOM_OFFSET },
             fontObject  = ChatFontNormal,
             textScale   = GLOBAL_FONT_SCALE,
             padding     = 20,
             minHeight   = 200,
             extraHeight = 600,
             backdrop    = true,
+			
+			outerBottomPad = 12,   -- <-- amount of spacing between Phrase and Macro
         })
     else
         -- Fallback: basically your original implementation
@@ -536,21 +540,26 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Macro snippet: shared multiline widget near bottom
     ------------------------------------------------
+	-- Max characters for macro snippet
+	local MAX_MACRO_CHARS = 255
 
     local macroScroll, macroEdit
 
     if UI and UI.CreateMultilineEdit then
-        macroScroll, macroEdit = UI.CreateMultilineEdit(actionPage, {
-            point       = { "BOTTOMLEFT",  actionPage, "BOTTOMLEFT", 4, 40 },
-            point2      = { "BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 40 },
-            fontObject  = ChatFontNormal,
-            textScale   = GLOBAL_FONT_SCALE,
-            padding     = 20,
-            minHeight   = 60,
-            extraHeight = 140,
-            backdrop    = true,
-            onFocusHighlight = true,
-        })
+        -- directly under the phrase box
+		local PHRASE_MACRO_GAP = -14  -- negative = further down
+		macroScroll, macroEdit = UI.CreateMultilineEdit(actionPage, {
+			point       = { "TOPLEFT",     configFrame.phraseScroll, "BOTTOMLEFT", 0, PHRASE_MACRO_GAP },
+			point2      = { "BOTTOMRIGHT", actionPage,               "BOTTOMRIGHT", -10, 40 },
+			fontObject  = ChatFontNormal,
+			textScale   = GLOBAL_FONT_SCALE,
+			padding     = 20,
+			minHeight   = 60,
+			extraHeight = 140,
+			backdrop    = true,
+			onFocusHighlight = true,
+			
+		})
     else
         macroScroll = CreateFrame(
             "ScrollFrame", nil, actionPage,
@@ -596,6 +605,41 @@ local function BuildConfigFrame()
 
     StyleText(macroEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
     configFrame.macroEdit = macroEdit
+	
+	-- Character counter: "0/255"
+	local macroCountLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	macroCountLabel:SetPoint("LEFT", macroLabel, "RIGHT", 8, 0)
+	macroCountLabel:SetText(string.format("0/%d", MAX_MACRO_CHARS))
+	StyleText(macroCountLabel, "HINT")
+
+	-- store if you want later access (optional)
+	configFrame.macroCountLabel = macroCountLabel
+	
+	-- Enforce max length + live counter
+	macroEdit:HookScript("OnTextChanged", function(self)
+		local text = self:GetText() or ""
+		local len  = strlenutf8 and strlenutf8(text) or #text
+
+		if len > MAX_MACRO_CHARS then
+			-- Trim down to max. For safety with UTF-8, shrink until in range.
+			-- (Most macro text will be ASCII, but this protects against multibyte.)
+			local trimmed = text
+			while len > MAX_MACRO_CHARS and trimmed ~= "" do
+				trimmed = trimmed:sub(1, -2)
+				len = strlenutf8 and strlenutf8(trimmed) or #trimmed
+			end
+
+			self:SetText(trimmed)
+			self:SetCursorPosition(len or MAX_MACRO_CHARS)
+		end
+
+		if macroCountLabel then
+			macroCountLabel:SetFormattedText("%d/%d", len, MAX_MACRO_CHARS)
+		end
+	end)
+
+	
+	
 
     ------------------------------------------------
     -- Save button (bottom-left)

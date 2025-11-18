@@ -84,23 +84,34 @@ function UI.CreateMultilineEdit(parent, opts)
     local fontObject = opts.fontObject or ChatFontNormal
     local padding    = opts.padding or 20
     local name       = opts.name
-    local template   = "UIPanelScrollFrameTemplate,BackdropTemplate"
 
-    local scroll = CreateFrame("ScrollFrame", name, parent, template)
+    -- NEW: outer container that actually has the border
+    local container = CreateFrame("Frame", name, parent, "BackdropTemplate")
 
-    -- Positioning
+    -- Position / size the container (not the scrollframe)
     if opts.point then
-        scroll:SetPoint(unpack(opts.point))
+        container:SetPoint(unpack(opts.point))
     end
     if opts.point2 then
-        scroll:SetPoint(unpack(opts.point2))
+        container:SetPoint(unpack(opts.point2))
     end
     if not opts.point and not opts.point2 then
-        scroll:SetSize(size[1], size[2])
+        container:SetSize(size[1], size[2])
     end
 
-    ApplyDefaultBackdrop(scroll, opts)
+    ApplyDefaultBackdrop(container, opts)
+    
+	local padLeft   = opts.outerLeftPad   or 6
+	local padRight  = opts.outerRightPad  or 27  -- includes scrollbar lane
+	local padTop    = opts.outerTopPad    or 6
+	local padBottom = opts.outerBottomPad or 6
+	
+	-- Scrollframe lives *inside* the bordered container
+	local scroll = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT",     container, "TOPLEFT", padLeft, -padTop)
+	scroll:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -padRight, padBottom)
 
+	-- Edit box
     local edit = CreateFrame("EditBox", nil, scroll)
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
@@ -144,8 +155,20 @@ function UI.CreateMultilineEdit(parent, opts)
     ApplyTextScale(edit, opts.textScale)
 
     ResizeEdit()
+	
+	-- Click anywhere in the box to focus the edit
+    container:EnableMouse(true)
+    container:SetScript("OnMouseDown", function()
+        edit:SetFocus()
+    end)
 
-    return scroll, edit
+    scroll:EnableMouse(true)
+    scroll:SetScript("OnMouseDown", function()
+        edit:SetFocus()
+    end)
+	
+	-- instead of: return scroll, edit
+    return container, edit
 end
 
 if PE.RegisterModule then
