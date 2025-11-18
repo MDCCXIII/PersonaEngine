@@ -5,7 +5,7 @@
 
 local MODULE = "ConfigUI"
 local PE = PE
-local UI = PE and PE.UI  -- widget collection (UIWindow, UILabeledEdit, etc.)
+local UI = PE and PE.UI  -- shorthand for widgets
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -15,14 +15,6 @@ end
 if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
-
-----------------------------------------------------
--- Layout constants
-----------------------------------------------------
-
--- These are mostly for the phrase area; window size is now driven by UI.CreateWindow
-local PHRASE_SCROLL_WIDTH  = 400
-local PHRASE_SCROLL_HEIGHT = 200
 
 ----------------------------------------------------
 -- Spell lookup wrapper
@@ -80,12 +72,11 @@ local function BuildConfigFrame()
     end
 
     ------------------------------------------------
-    -- Main window (via UI widget)
+    -- Main window via UI widget (persistent + resizable)
     ------------------------------------------------
-
     if UI and UI.CreateWindow then
         configFrame = UI.CreateWindow({
-            id        = "Config",  -- logical ID for persistence
+            id        = "Config",
             title     = "Persona Engine – Artificer Config",
             width     = 700,
             height    = 750,
@@ -93,20 +84,19 @@ local function BuildConfigFrame()
             minHeight = 430,
             strata    = "DIALOG",
             level     = 100,
-            -- point  = { "CENTER", UIParent, "CENTER", 0, 0 },
         })
     else
-        -- Fallback: old-style frame if UI widgets somehow missing
+        -- Fallback: simple frame if widgets are missing
         configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
         configFrame:SetSize(700, 750)
         configFrame:SetPoint("CENTER")
+        configFrame:SetFrameStrata("DIALOG")
+        configFrame:SetFrameLevel(100)
         configFrame:SetMovable(true)
         configFrame:EnableMouse(true)
         configFrame:RegisterForDrag("LeftButton")
         configFrame:SetScript("OnDragStart", configFrame.StartMoving)
         configFrame:SetScript("OnDragStop", configFrame.StopMovingOrSizing)
-        configFrame:SetFrameStrata("DIALOG")
-        configFrame:SetFrameLevel(100)
 
         local title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         if configFrame.TitleBg then
@@ -120,40 +110,124 @@ local function BuildConfigFrame()
         configFrame:Hide()
     end
 
-    -- Backwards-compat alias for any external code that still expects this name
+    -- Backwards-compat alias for anything expecting this name
     if not _G["PersonaEngineConfigFrame"] then
         _G["PersonaEngineConfigFrame"] = configFrame
     end
 
     ------------------------------------------------
-    -- Spell selector
+    -- Tabs & pages
     ------------------------------------------------
 
-    local spellLabel, spellEdit
-    if UI and UI.CreateLabeledEdit then
-        spellLabel, spellEdit = UI.CreateLabeledEdit(configFrame, {
-            label = "Spell name or ID:",
-            width = 200,
-            point = { "TOPLEFT", configFrame, "TOPLEFT", 16, -40 },
-        })
-    else
-        spellLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        spellLabel:SetPoint("TOPLEFT", 16, -40)
-        spellLabel:SetText("Spell name or ID:")
+    local tabButtons = {}
 
-        spellEdit = CreateFrame("EditBox", nil, configFrame, "InputBoxTemplate")
-        spellEdit:SetSize(200, 20)
-        spellEdit:SetPoint("LEFT", spellLabel, "RIGHT", 10, 0)
-        spellEdit:SetAutoFocus(false)
+    local actionPage = CreateFrame("Frame", nil, configFrame)
+    actionPage:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 8, -60)
+    actionPage:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -8, 8)
+
+    local settingsPage = CreateFrame("Frame", nil, configFrame)
+    settingsPage:SetPoint("TOPLEFT", actionPage, "TOPLEFT", 0, 0)
+    settingsPage:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", 0, 0)
+    settingsPage:Hide()
+
+    local function SetActivePage(index)
+        for i, tab in ipairs(tabButtons) do
+            if i == index then
+                tab:LockHighlight()
+                if tab.page then tab.page:Show() end
+            else
+                tab:UnlockHighlight()
+                if tab.page then tab.page:Hide() end
+            end
+        end
     end
 
+    local tab1 = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
+    tab1:SetText("Action Phrases & Macros")
+    tab1:SetHeight(20)
+    tab1:SetWidth(tab1:GetTextWidth() + 24)
+    tab1:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 12, -30)
+    tab1.page = actionPage
+    tab1:SetScript("OnClick", function() SetActivePage(1) end)
+
+    local tab2 = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
+    tab2:SetText("Settings")
+    tab2:SetHeight(20)
+    tab2:SetWidth(tab2:GetTextWidth() + 24)
+    tab2:SetPoint("LEFT", tab1, "RIGHT", 6, 0)
+    tab2.page = settingsPage
+    tab2:SetScript("OnClick", function() SetActivePage(2) end)
+
+    tabButtons[1] = tab1
+    tabButtons[2] = tab2
+    SetActivePage(1)
+
+    -- Placeholder Settings page content
+    local settingsLabel = settingsPage:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    settingsLabel:SetPoint("TOPLEFT", 8, -8)
+    settingsLabel:SetText("Persona Engine Settings (coming soon)")
+
+    ------------------------------------------------
+    -- Helper to create a bordered box
+    ------------------------------------------------
+
+    local function CreateBorderBox(parent)
+        local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        box:SetBackdrop({
+            bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile     = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets   = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        box:SetBackdropColor(0, 0, 0, 0.4)
+        box:SetBackdropBorderColor(0.3, 0.3, 0.3)
+        return box
+    end
+
+    ------------------------------------------------
+    -- ACTION PAGE CONTENT
+    ------------------------------------------------
+
+    ------------------------------------------------
+    -- Spell selector row
+    ------------------------------------------------
+
+    local spellLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    spellLabel:SetPoint("TOPLEFT", actionPage, "TOPLEFT", 8, -4)
+    spellLabel:SetText("Spell name or ID:")
+
+    local spellEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
+    spellEdit:SetAutoFocus(false)
+    spellEdit:SetHeight(20)
     configFrame.spellEdit = spellEdit
 
-    local spellIcon = configFrame:CreateTexture(nil, "OVERLAY")
+    local spellIcon = actionPage:CreateTexture(nil, "OVERLAY")
     spellIcon:SetSize(24, 24)
-    spellIcon:SetPoint("LEFT", spellEdit, "RIGHT", 8, 0)
 
-    local spellInfoText = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local loadButton
+    if UI and UI.CreateButton then
+        loadButton = UI.CreateButton(actionPage, {
+            text  = "Load",
+            size  = { 70, 22 },
+            point = { "TOPRIGHT", actionPage, "TOPRIGHT", -4, -2 },
+        })
+    else
+        loadButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
+        loadButton:SetSize(70, 22)
+        loadButton:SetPoint("TOPRIGHT", actionPage, "TOPRIGHT", -4, -2)
+        loadButton:SetText("Load")
+    end
+
+    -- Now that loadButton exists, anchor spellEdit & icon between label and button
+    spellEdit:ClearAllPoints()
+    spellEdit:SetPoint("LEFT", spellLabel, "RIGHT", 8, 0)
+    spellEdit:SetPoint("RIGHT", loadButton, "LEFT", -32, 0)
+
+    spellIcon:SetPoint("LEFT", spellEdit, "RIGHT", 4, 0)
+
+    local spellInfoText = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     spellInfoText:SetPoint("TOPLEFT", spellLabel, "BOTTOMLEFT", 0, -4)
     spellInfoText:SetWidth(420)
     spellInfoText:SetJustifyH("LEFT")
@@ -239,31 +313,17 @@ local function BuildConfigFrame()
         end
     end
 
-    local loadButton
-    if UI and UI.CreateButton then
-        loadButton = UI.CreateButton(configFrame, {
-            text  = "Load",
-            size  = { 70, 22 },
-            point = { "LEFT", spellInfoText, "RIGHT", -70, 0 },
-            onClick = LoadSpellByInput,
-        })
-    else
-        loadButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
-        loadButton:SetSize(70, 22)
-        loadButton:SetPoint("LEFT", spellInfoText, "RIGHT", -70, 0)
-        loadButton:SetText("Load")
-        loadButton:SetScript("OnClick", LoadSpellByInput)
-    end
+    loadButton:SetScript("OnClick", LoadSpellByInput)
 
     ------------------------------------------------
     -- Trigger dropdown
     ------------------------------------------------
 
-    local triggerLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local triggerLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     triggerLabel:SetPoint("TOPLEFT", spellInfoText, "BOTTOMLEFT", 0, -12)
     triggerLabel:SetText("When should Copporclang speak?")
 
-    local triggerDrop = CreateFrame("Frame", "PersonaEngineTriggerDrop", configFrame, "UIDropDownMenuTemplate")
+    local triggerDrop = CreateFrame("Frame", "PersonaEngineTriggerDrop", actionPage, "UIDropDownMenuTemplate")
     triggerDrop:SetPoint("LEFT", triggerLabel, "RIGHT", -10, -4)
 
     local function TriggerDrop_OnClick(self)
@@ -300,11 +360,11 @@ local function BuildConfigFrame()
     -- Chance + enabled
     ------------------------------------------------
 
-    local chanceLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local chanceLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanceLabel:SetPoint("TOPLEFT", triggerLabel, "BOTTOMLEFT", 0, -14)
     chanceLabel:SetText("Chance (1 in N):")
 
-    local chanceEdit = CreateFrame("EditBox", nil, configFrame, "InputBoxTemplate")
+    local chanceEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
     chanceEdit:SetSize(60, 20)
     chanceEdit:SetPoint("LEFT", chanceLabel, "RIGHT", 10, 0)
     chanceEdit:SetAutoFocus(false)
@@ -314,13 +374,13 @@ local function BuildConfigFrame()
 
     local enabledCheck
     if UI and UI.CreateCheckbox then
-        enabledCheck = UI.CreateCheckbox(configFrame, {
+        enabledCheck = UI.CreateCheckbox(actionPage, {
             label   = "Enabled",
             point   = { "LEFT", chanceEdit, "RIGHT", 20, 0 },
             checked = true,
         })
     else
-        enabledCheck = CreateFrame("CheckButton", nil, configFrame, "InterfaceOptionsCheckButtonTemplate")
+        enabledCheck = CreateFrame("CheckButton", nil, actionPage, "InterfaceOptionsCheckButtonTemplate")
         enabledCheck:SetPoint("LEFT", chanceEdit, "RIGHT", 20, 0)
         enabledCheck.Text:SetText("Enabled")
         enabledCheck:SetChecked(true)
@@ -331,7 +391,7 @@ local function BuildConfigFrame()
     -- Channels
     ------------------------------------------------
 
-    local chanLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local chanLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanLabel:SetPoint("TOPLEFT", chanceLabel, "BOTTOMLEFT", 0, -14)
     chanLabel:SetText("Channels:")
 
@@ -343,13 +403,9 @@ local function BuildConfigFrame()
     for i, chan in ipairs(chans) do
         local cb
         if UI and UI.CreateCheckbox then
-            -- We still do custom layout, but use the widget constructor
-            cb = UI.CreateCheckbox(configFrame, {
-                label = chan,
-                -- point filled in below
-            })
+            cb = UI.CreateCheckbox(actionPage, { label = chan })
         else
-            cb = CreateFrame("CheckButton", nil, configFrame, "InterfaceOptionsCheckButtonTemplate")
+            cb = CreateFrame("CheckButton", nil, actionPage, "InterfaceOptionsCheckButtonTemplate")
             cb.Text:SetText(chan)
         end
 
@@ -365,7 +421,6 @@ local function BuildConfigFrame()
         end
 
         cb:SetChecked(chan == "SAY")
-
         chanChecks[chan] = cb
         lastInRow = cb
     end
@@ -373,40 +428,98 @@ local function BuildConfigFrame()
     configFrame.channelCheckboxes = chanChecks
 
     ------------------------------------------------
-    -- Phrase editor
+    -- Phrase editor with bordered box, fills middle
     ------------------------------------------------
 
-    local phraseLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local phraseLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
     phraseLabel:SetText("Phrases (one per line):")
 
+    local phraseBox = CreateBorderBox(actionPage)
+    phraseBox:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", -4, -4)
+    phraseBox:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -8, 130)
+
     local scrollFrame, phraseEdit
     if UI and UI.CreateMultilineEdit then
-        scrollFrame, phraseEdit = UI.CreateMultilineEdit(configFrame, {
-            size  = { PHRASE_SCROLL_WIDTH, PHRASE_SCROLL_HEIGHT },
-            point = { "TOPLEFT", phraseLabel, "BOTTOMLEFT", 0, -4 },
+        scrollFrame, phraseEdit = UI.CreateMultilineEdit(phraseBox, {
+            size  = { 400, 200 },
+            point = { "TOPLEFT", phraseBox, "TOPLEFT", 4, -4 },
         })
     else
-        scrollFrame = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", configFrame, "UIPanelScrollFrameTemplate")
-        scrollFrame:ClearAllPoints()
-        scrollFrame:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", 0, -4)
-        scrollFrame:SetSize(PHRASE_SCROLL_WIDTH, PHRASE_SCROLL_HEIGHT)
+        scrollFrame = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", phraseBox, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", phraseBox, "TOPLEFT", 4, -4)
+        scrollFrame:SetPoint("BOTTOMRIGHT", phraseBox, "BOTTOMRIGHT", -4, 4)
 
         phraseEdit = CreateFrame("EditBox", nil, scrollFrame)
         phraseEdit:SetMultiLine(true)
         phraseEdit:SetAutoFocus(false)
         phraseEdit:SetFontObject(ChatFontNormal)
-        phraseEdit:SetWidth(PHRASE_SCROLL_WIDTH - 20)
-        phraseEdit:SetHeight(PHRASE_SCROLL_HEIGHT)
-
+        phraseEdit:SetJustifyH("LEFT")
+        phraseEdit:SetJustifyV("TOP")
         scrollFrame:SetScrollChild(phraseEdit)
     end
+
+    -- Adjust inner edit when box resizes
+    phraseBox:SetScript("OnSizeChanged", function(self, width, height)
+        local w = math.max(0, width - 8)
+        local h = math.max(0, height - 8)
+        phraseEdit:SetWidth(w - 20)
+        phraseEdit:SetHeight(h)
+    end)
+
+    phraseEdit:SetWidth(phraseBox:GetWidth() - 28)
+    phraseEdit:SetHeight(phraseBox:GetHeight() - 8)
 
     configFrame.phraseEdit   = phraseEdit
     configFrame.phraseScroll = scrollFrame
 
     ------------------------------------------------
-    -- Save button
+    -- Macro snippet region (multi-line in bordered box)
+    ------------------------------------------------
+
+    local macroBox = CreateBorderBox(actionPage)
+    macroBox:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 40)
+    macroBox:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -8, 40)
+    macroBox:SetHeight(60)  -- ~3 lines default; window resize will make it visually feel larger/smaller
+
+    local macroLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    macroLabel:SetPoint("BOTTOMLEFT", macroBox, "TOPLEFT", 4, 2)
+    macroLabel:SetText("Macro snippet:")
+
+    local macroScroll = CreateFrame("ScrollFrame", nil, macroBox, "UIPanelScrollFrameTemplate")
+    macroScroll:SetPoint("TOPLEFT", macroBox, "TOPLEFT", 4, -4)
+    macroScroll:SetPoint("BOTTOMRIGHT", macroBox, "BOTTOMRIGHT", -4, 4)
+
+    local macroEdit = CreateFrame("EditBox", nil, macroScroll)
+    macroEdit:SetMultiLine(true)
+    macroEdit:SetAutoFocus(false)
+    macroEdit:SetFontObject(ChatFontNormal)
+    macroEdit:SetJustifyH("LEFT")
+    macroEdit:SetJustifyV("TOP")
+    macroScroll:SetScrollChild(macroEdit)
+
+    macroBox:SetScript("OnSizeChanged", function(self, width, height)
+        local w = math.max(0, width - 8)
+        local h = math.max(0, height - 8)
+        macroEdit:SetWidth(w - 20)
+        macroEdit:SetHeight(h)
+    end)
+
+    macroEdit:SetWidth(macroBox:GetWidth() - 28)
+    macroEdit:SetHeight(macroBox:GetHeight() - 8)
+
+    macroEdit:SetScript("OnEditFocusGained", function(self)
+        self:HighlightText(0, #self:GetText())
+    end)
+
+    macroEdit:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
+    configFrame.macroEdit = macroEdit
+
+    ------------------------------------------------
+    -- Save button (bottom-left)
     ------------------------------------------------
 
     local function SaveCurrentConfig()
@@ -469,16 +582,16 @@ local function BuildConfigFrame()
 
     local saveButton
     if UI and UI.CreateButton then
-        saveButton = UI.CreateButton(configFrame, {
+        saveButton = UI.CreateButton(actionPage, {
             text  = "Save Config",
             size  = { 120, 24 },
-            point = { "BOTTOMLEFT", configFrame, "BOTTOMLEFT", 16, 16 },
+            point = { "BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 4 },
             onClick = SaveCurrentConfig,
         })
     else
-        saveButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
+        saveButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
         saveButton:SetSize(120, 24)
-        saveButton:SetPoint("BOTTOMLEFT", 16, 16)
+        saveButton:SetPoint("BOTTOMLEFT", 4, 4)
         saveButton:SetText("Save Config")
         saveButton:SetScript("OnClick", SaveCurrentConfig)
     end
@@ -486,38 +599,11 @@ local function BuildConfigFrame()
     configFrame.saveButton = saveButton
 
     ------------------------------------------------
-    -- Macro snippet (for bubble macros)
+    -- Hint (bottom-right)
     ------------------------------------------------
 
-    local macroLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    macroLabel:SetPoint("BOTTOMLEFT", saveButton, "TOPLEFT", 0, 6)
-    macroLabel:SetText("Macro snippet:")
-
-    local macroEdit = CreateFrame("EditBox", nil, configFrame, "InputBoxTemplate")
-    macroEdit:SetMultiLine(true)
-    macroEdit:SetAutoFocus(false)
-    macroEdit:SetFontObject(ChatFontNormal)
-    macroEdit:SetSize(220, 40)
-    macroEdit:SetPoint("LEFT", macroLabel, "RIGHT", 10, 0)
-    macroEdit:SetJustifyH("LEFT")
-    macroEdit:SetJustifyV("TOP")
-
-    macroEdit:SetScript("OnEditFocusGained", function(self)
-        self:HighlightText(0, #self:GetText())
-    end)
-
-    macroEdit:SetScript("OnEscapePressed", function(self)
-        self:ClearFocus()
-    end)
-
-    configFrame.macroEdit = macroEdit
-
-    ------------------------------------------------
-    -- Hint
-    ------------------------------------------------
-
-    local hint = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hint:SetPoint("BOTTOMRIGHT", -16, 16)
+    local hint = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hint:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -4, 4)
     hint:SetJustifyH("RIGHT")
     hint:SetWidth(280)
     hint:SetText(
