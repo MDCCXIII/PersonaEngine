@@ -1,3 +1,6 @@
+--TODO: we are not limited on space, why are we using cryptic, non-descriptive variable names
+--TODO: at least if we are going to keep variables local instead of moving everything to globals then lets make local variables above the functions but below the headers so we can easily see and update values and know what the values are for if the variable names are descriptive in their naming convention 
+
 -- ##################################################
 -- PE_Icon.lua
 -- Free-floating status button (no minimap LibDBIcon)
@@ -19,6 +22,8 @@ end
 if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
+
+
 
 ----------------------------------------------------
 -- Optional LDB object (no minimap icon)
@@ -62,14 +67,14 @@ local function PersonaEngine_CreateButton()
     local d   = PersonaEngine_ButtonDefaults or {}
 
     local btn = CreateFrame("Button", "PersonaEngineButton", UIParent)
-    btn:SetSize(32, 32)
+    btn:SetSize(32, 32) --TODO: 32, 32 values should be moved to global variables so i have 1 solid and organized place to make uI updates, keep these values as defaults if global doesnt exist
     btn:SetScale(cfg.scale or d.scale or 1.2)
 
     btn:SetFrameStrata(cfg.strata or d.strata or "MEDIUM")
     btn:SetFrameLevel((cfg.level or d.level or 1))
 
-    btn:SetClampedToScreen(true)
-    btn:SetMovable(true)
+    btn:SetClampedToScreen(true) --Spike: could we add a btn:SetClampedToMinimap and then toggle between screen and minimap clamp on alt + rightclick?
+    btn:SetMovable(true) --TODO: hook this to a toggle option on alt + left click 
     btn:EnableMouse(true)
     btn:RegisterForDrag("LeftButton")
     btn:RegisterForClicks("AnyUp")
@@ -87,8 +92,8 @@ local function PersonaEngine_CreateButton()
     ------------------------------------------------
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("CENTER")
-    icon:SetSize(20, 20)
-    icon:SetTexture("Interface\\AddOns\\PersonaEngine\\references\\persona_brain_icon.tga")
+    icon:SetSize(20, 20) --TODO: same here move this to global, keep these values as defaults if global doesnt exist
+    icon:SetTexture("Interface\\AddOns\\PersonaEngine\\references\\persona_brain_icon.tga") --TODO: for good measure, value into globals
     icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
     btn.icon = icon
 
@@ -156,17 +161,17 @@ end
 function PersonaEngine_Button_OnClick(self, button)
     -- DevMode Ctrl+Left: performance/debug panel
     if PersonaEngineDB.DevMode and IsControlKeyDown() and button == "LeftButton" then
-        if _G.PersonaEngine_TogglePerfFrame then
-            _G.PersonaEngine_TogglePerfFrame()
-        end
+        --removed perf frame -- free keybind slot available
         return
     end
+	
+	--TODO: just go ahead and put in the checks for left/right clicks with alt ctrl and shift mods even if we are not currently using them yet...
 
     -- DevMode Shift-clicks: scriptErrors / reload
     if IsShiftKeyDown() and PersonaEngineDB.DevMode then
         if button == "LeftButton" then
             local cur = GetCVar("scriptErrors")
-            SetCVar("scriptErrors", (cur == "1") and 0 or 1)
+            SetCVar("scriptErrors", (cur == "1") and 0 or 1) --TODO: this doesnt notify lua errors on/off, lets use tooltip status kind of like we have for dev mode... only show if lua errors on, otherwise keep TT clean
             ReloadUI()
             return
         elseif button == "RightButton" then
@@ -190,7 +195,7 @@ function PersonaEngine_Button_OnClick(self, button)
         if SR_On == 1 then
             local pool = PE_EngineOnLines or {}
             local line = (#pool > 0 and pool[math.random(#pool)]) or "Speech module online."
-            SendChatMessage(line, "SAY")
+            SendChatMessage(line, "SAY") --this could potentially cause taint if used at the wrong time, however i have never yet had this cause issue for me
             if PE.Log then PE.Log("|cff00ff00Persona Engine Enabled|r") end
         else
             local offPool = PE_EngineOffLines or {}
@@ -201,7 +206,7 @@ function PersonaEngine_Button_OnClick(self, button)
             local scaryPool = PE_EngineOffScaryLines or {}
             if #scaryPool > 0 and math.random(20) == 1 then
                 local scary = scaryPool[math.random(#scaryPool)]
-                SendChatMessage(scary, "SAY")
+                SendChatMessage(scary, "SAY") --this could potentially cause taint if used at the wrong time, however i have never yet had this cause issue for me
             end
         end
         return
@@ -209,7 +214,7 @@ function PersonaEngine_Button_OnClick(self, button)
 end
 
 ----------------------------------------------------
--- Tooltip (restored full version)
+-- Tooltip (restored full version) --TODO: stop putting these comments in code like this, the header is great and by all means feel free to put usage or comments but it's only (restored full version) until a few days goes by and then we dont even know the difference between restored or original
 ----------------------------------------------------
 
 function PersonaEngine_Button_OnTooltip(tt)
@@ -219,15 +224,15 @@ function PersonaEngine_Button_OnTooltip(tt)
 
     tt:ClearLines()
     tt:AddLine("Persona Engine", 1, 1, 1)
-    tt:AddLine("|cff00ff88Copporclang's Personality Core|r")
+    tt:AddLine("|cff00ff88Tasu Copporclang's Personality Core|r") -- added first name to surname
     tt:AddLine(" ")
 
     tt:AddLine("|cffffffffLeft-click:|r Open control console", 0.8, 0.8, 0.8)
     tt:AddLine("|cffffffffRight-click:|r Toggle speech module", 0.8, 0.8, 0.8)
 
     if PersonaEngineDB.DevMode then
-        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0)
-        tt:AddLine("|cffffffffCtrl+Left-click:|r Performance panel", 0.8, 0.8, 0.8)
+        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0) --spike: is this still a thing? should be still... 
+        tt:AddLine("|cffffffffCtrl+Left-click:|r Performance panel", 0.8, 0.8, 0.8) --TODO: perf is no longer a thing
         tt:AddLine("|cffffffffShift+Left-click:|r Toggle Lua errors & reload", 0.8, 0.8, 0.8)
         tt:AddLine("|cffffffffShift+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
     else
@@ -237,7 +242,7 @@ function PersonaEngine_Button_OnTooltip(tt)
     tt:AddLine(" ")
     tt:AddLine("|cffffd200Warning: Button may emit stray ideas.|r")
 
-    tt:Show()   -- <- the missing piece
+    tt:Show()   -- <- the missing piece --TODO: this is what i mean about the comments like this, missing piece ???? what? (i only know what this comment is talking about because it was recent and still fresh in my mind...
 end
 
 ----------------------------------------------------
