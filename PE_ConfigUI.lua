@@ -5,6 +5,8 @@
 
 local MODULE = "ConfigUI"
 local PE = PE
+local UI = PE.UI  -- shorthand for widgets
+
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")

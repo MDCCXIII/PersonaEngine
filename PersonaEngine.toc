@@ -17,5 +17,12 @@ PE_NPCMemory.lua
 PE_VFX.lua
 PE_Icon.lua
 
-# Config UI
+# UI - widgets
+UI\PE_UIWindow.lua
+UI\PE_UILabeledEdit.lua
+UI\PE_UICheckbox.lua
+UI\PE_UIButton.lua
+UI\PE_UIMultilineEdit.lua
+
+# UI
 PE_ConfigUI.lua
