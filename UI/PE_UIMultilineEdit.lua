@@ -1,12 +1,13 @@
 -- ##################################################
 -- UI/PE_UIMultilineEdit.lua
--- Scrollable multiline edit boxes (shared widget)
+-- Scrollable multiline edit widget
 -- ##################################################
 
 local MODULE = "UIMultilineEdit"
 local PE = PE
 
 if not PE or type(PE) ~= "table" then
+    print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
     return
 end
 
@@ -14,26 +15,27 @@ PE.UI = PE.UI or {}
 local UI = PE.UI
 
 --[[--------------------------------------------------------------------
-UI.CreateMultilineEdit(parent, opts) → scrollFrame, editBox
+UI.CreateMultilineEdit(parent, opts) -> scrollFrame, editBox
 
 opts (all optional):
-  name         : string   -- frame name for the scroll frame
-  size         : { w, h } -- fallback size if no anchors
-  point        : { p, rel, rp, x, y }        -- primary anchor
-  point2       : { p, rel, rp, x, y }        -- secondary anchor (for stretch)
-  fontObject   : FontObject (default ChatFontNormal)
-  textScale    : number   -- scale applied to edit font (e.g. 1.0, 0.9, 1.1)
-  padding      : number   -- horizontal padding inside scroll (default 20)
-  minHeight    : number   -- minimum edit height (default: scroll height)
-  extraHeight  : number   -- extra height (used to keep scrollable buffer)
-  backdrop     : table|true|false
-                - true/nil → default PersonaEngine chat-style backdrop
-                - table    → custom backdrop for SetBackdrop
-                - false    → no backdrop
-  backdropColor: {r,g,b,a} for SetBackdropColor (default 0,0,0,0.4)
-  borderColor  : {r,g,b,a} for SetBackdropBorderColor (default 0.3,0.3,0.3)
+
+  name          : string   -- global name for scrollframe
+  size          : { w, h } -- default size if no anchors
+  point         : { p, rel, rp, x, y }
+  point2        : { p, rel, rp, x, y } -- second anchor for stretching
+  fontObject    : FontObject (default ChatFontNormal)
+  textScale     : number   -- scale factor for font size (1.0 = unchanged)
+  padding       : number   -- horizontal padding, default 20
+  minHeight     : number   -- minimum edit height (default = scroll height)
+  extraHeight   : number   -- extra buffer height to keep scrolling
+  backdrop      : true|false|table
+                  true/nil -> default backdrop
+                  false    -> no backdrop
+                  table    -> custom for SetBackdrop
+  backdropColor : { r, g, b, a } (default 0,0,0,0.4)
+  borderColor   : { r, g, b, a } (default 0.3,0.3,0.3,1)
   onFocusHighlight : boolean
-                - if true, highlight all text on focus + Esc clears focus
+                  true -> highlight all text on focus, Esc clears focus
 ----------------------------------------------------------------------]]
 
 local function ApplyDefaultBackdrop(scroll, opts)
@@ -82,10 +84,7 @@ function UI.CreateMultilineEdit(parent, opts)
     local fontObject = opts.fontObject or ChatFontNormal
     local padding    = opts.padding or 20
     local name       = opts.name
-    local template   = "UIPanelScrollFrameTemplate"
-
-    -- We add BackdropTemplate here so any caller can get the border for free.
-    template = template .. ",BackdropTemplate"
+    local template   = "UIPanelScrollFrameTemplate,BackdropTemplate"
 
     local scroll = CreateFrame("ScrollFrame", name, parent, template)
 
@@ -96,16 +95,12 @@ function UI.CreateMultilineEdit(parent, opts)
     if opts.point2 then
         scroll:SetPoint(unpack(opts.point2))
     end
-
-    -- Fallback static size if no anchors were given
     if not opts.point and not opts.point2 then
         scroll:SetSize(size[1], size[2])
     end
 
-    -- Backdrop / border
     ApplyDefaultBackdrop(scroll, opts)
 
-    -- Edit box
     local edit = CreateFrame("EditBox", nil, scroll)
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
@@ -115,16 +110,14 @@ function UI.CreateMultilineEdit(parent, opts)
 
     scroll:SetScrollChild(edit)
 
-    -- Dynamic sizing: keep edit width in sync with scroll width, and give it
-    -- a tall enough height to always have a scrollable region.
     local function ResizeEdit()
         local w = math.max(0, scroll:GetWidth() - padding)
         edit:SetWidth(w)
 
-        local scrollH  = scroll:GetHeight()
-        local minH     = opts.minHeight or scrollH
-        local extraH   = opts.extraHeight or 0
-        local targetH  = math.max(minH, scrollH) + extraH
+        local scrollH = scroll:GetHeight()
+        local minH    = opts.minHeight or scrollH
+        local extraH  = opts.extraHeight or 0
+        local targetH = math.max(minH, scrollH) + extraH
 
         edit:SetHeight(targetH)
         scroll:UpdateScrollChildRect()
@@ -138,22 +131,18 @@ function UI.CreateMultilineEdit(parent, opts)
         scroll:UpdateScrollChildRect()
     end)
 
-    -- Optional focus behaviour
     if opts.onFocusHighlight then
         edit:SetScript("OnEditFocusGained", function(self)
             local text = self:GetText() or ""
             self:HighlightText(0, #text)
         end)
-
         edit:SetScript("OnEscapePressed", function(self)
             self:ClearFocus()
         end)
     end
 
-    -- Optional per-widget text scaling
     ApplyTextScale(edit, opts.textScale)
 
-    -- Initial layout
     ResizeEdit()
 
     return scroll, edit

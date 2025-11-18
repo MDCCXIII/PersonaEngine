@@ -4,8 +4,8 @@
 -- ##################################################
 
 local MODULE = "ConfigUI"
-local PE = PE
-local UI = PE and PE.UI  -- shorthand for widgets
+local PE     = PE
+local UI     = PE and PE.UI  -- shorthand for widgets
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -14,6 +14,67 @@ end
 
 if PE.LogLoad then
     PE.LogLoad(MODULE)
+end
+
+----------------------------------------------------
+-- Text style / theme
+----------------------------------------------------
+
+-- Global knob: bump this to resize *all* config text
+local GLOBAL_FONT_SCALE = 1.0   -- e.g. 0.9, 1.0, 1.1
+
+local TEXT_STYLES = {
+    TITLE = {
+        template   = "GameFontHighlight",
+        sizeOffset = 0,
+        color      = { 1.0, 0.96, 0.41, 1.0 }, -- gold
+    },
+    HEADER = {
+        template   = "GameFontNormalLarge",
+        sizeOffset = 0,
+        color      = { 1.0, 0.82, 0.0, 1.0 },
+    },
+    LABEL = {
+        template   = "GameFontNormal",
+        sizeOffset = 0,
+        color      = { 0.90, 0.90, 0.90, 1.0 },
+    },
+    HINT = {
+        template   = "GameFontHighlightSmall",
+        sizeOffset = 0,
+        color      = { 0.75, 0.75, 0.75, 1.0 },
+    },
+    EMPHASIS = {
+        template   = "GameFontHighlight",
+        sizeOffset = 0,
+        color      = { 1.0, 1.0, 1.0, 1.0 },
+    },
+}
+
+local function StyleText(widget, styleKey, overrides)
+    if not widget or not styleKey then return end
+    local style = TEXT_STYLES[styleKey]
+    if not style then return end
+
+    overrides = overrides or {}
+    local template   = overrides.template   or style.template
+    local sizeOffset = overrides.sizeOffset or style.sizeOffset or 0
+    local scale      = overrides.scale      or GLOBAL_FONT_SCALE or 1.0
+    local color      = overrides.color      or style.color
+
+    if template then
+        widget:SetFontObject(template)
+    end
+
+    local font, size, flags = widget:GetFont()
+    if font and size then
+        local newSize = size * scale + sizeOffset
+        widget:SetFont(font, newSize, flags)
+    end
+
+    if color then
+        widget:SetTextColor(color[1], color[2], color[3], color[4] or 1)
+    end
 end
 
 ----------------------------------------------------
@@ -70,85 +131,26 @@ local function BuildConfigFrame()
     if configFrame then
         return
     end
-	
-	    ------------------------------------------------
-    -- Text style / theme helpers
-    ------------------------------------------------
-
-    -- Global knob: bump this up/down to scale all config text together
-    local GLOBAL_FONT_SCALE = 1.0  -- e.g. 0.9, 1.0, 1.1
-
-    -- Logical styles for different bits of UI text
-    local TEXT_STYLES = {
-        TITLE = {
-            template   = "GameFontHighlight",
-            sizeOffset = 0,
-            color      = { 1.0, 0.96, 0.41, 1 }, -- gold-ish
-        },
-        HEADER = {
-            template   = "GameFontNormalLarge",
-            sizeOffset = 0,
-            color      = { 1.0, 0.82, 0.0, 1 }, -- big label
-        },
-        LABEL = {
-            template   = "GameFontNormal",
-            sizeOffset = 0,
-            color      = { 0.90, 0.90, 0.90, 1 },
-        },
-        HINT = {
-            template   = "GameFontHighlightSmall",
-            sizeOffset = 0,
-            color      = { 0.75, 0.75, 0.75, 1 },
-        },
-        EMPHASIS = {
-            template   = "GameFontHighlight",
-            sizeOffset = 0,
-            color      = { 1.0, 1.0, 1.0, 1 },
-        },
-    }
-
-    -- Call this on any FontString *or* EditBox with GetFont/SetFont
-    local function StyleText(widget, styleKey, overrides)
-        if not widget or not styleKey then return end
-        local style = TEXT_STYLES[styleKey]
-        if not style then return end
-
-        overrides = overrides or {}
-        local template   = overrides.template   or style.template
-        local sizeOffset = overrides.sizeOffset or style.sizeOffset or 0
-        local scale      = overrides.scale      or GLOBAL_FONT_SCALE or 1.0
-        local color      = overrides.color      or style.color
-
-        if template then
-            widget:SetFontObject(template)
-        end
-
-        local font, size, flags = widget:GetFont()
-        if font and size then
-            local newSize = size * scale + sizeOffset
-            widget:SetFont(font, newSize, flags)
-        end
-
-        if color then
-            widget:SetTextColor(color[1], color[2], color[3], color[4] or 1)
-        end
-    end
-
 
     ------------------------------------------------
     -- Main window via UI widget (persistent + resizable)
     ------------------------------------------------
+
     if UI and UI.CreateWindow then
         configFrame = UI.CreateWindow({
-            id        = "Config",
-            title     = "Persona Engine – Artificer Config",
-            width     = 700,
-            height    = 750,
-            minWidth  = 520,
+            id       = "Config",
+            title    = "Persona Engine – Artificer Config",
+            width    = 700,
+            height   = 750,
+            minWidth = 520,
             minHeight = 430,
-            strata    = "DIALOG",
-            level     = 100,
+            strata   = "DIALOG",
+            level    = 100,
         })
+
+        if configFrame.title then
+            StyleText(configFrame.title, "TITLE")
+        end
     else
         -- Fallback: simple frame if widgets are missing
         configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
@@ -170,10 +172,7 @@ local function BuildConfigFrame()
         end
         title:SetText("Persona Engine – Artificer Config")
         configFrame.title = title
-		
-		if configFrame.title then
-			StyleText(configFrame.title, "TITLE")
-		end
+        StyleText(title, "TITLE")
 
         configFrame:Hide()
     end
@@ -190,11 +189,11 @@ local function BuildConfigFrame()
     local tabButtons = {}
 
     local actionPage = CreateFrame("Frame", nil, configFrame)
-    actionPage:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 8, -60)
+    actionPage:SetPoint("TOPLEFT",     configFrame, "TOPLEFT", 8,  -60)
     actionPage:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -8, 8)
 
     local settingsPage = CreateFrame("Frame", nil, configFrame)
-    settingsPage:SetPoint("TOPLEFT", actionPage, "TOPLEFT", 0, 0)
+    settingsPage:SetPoint("TOPLEFT",     actionPage, "TOPLEFT", 0, 0)
     settingsPage:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", 0, 0)
     settingsPage:Hide()
 
@@ -228,32 +227,14 @@ local function BuildConfigFrame()
 
     tabButtons[1] = tab1
     tabButtons[2] = tab2
+
     SetActivePage(1)
 
     -- Placeholder Settings page content
     local settingsLabel = settingsPage:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     settingsLabel:SetPoint("TOPLEFT", 8, -8)
     settingsLabel:SetText("Persona Engine Settings (coming soon)")
-	StyleText(settingsLabel, "HEADER")
-
-
-    ------------------------------------------------
-    -- Helper: apply a subtle border to a frame
-    ------------------------------------------------
-
-    local function ApplyBorder(frame)
-        if not frame.SetBackdrop then return end
-        frame:SetBackdrop({
-            bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile     = true,
-            tileSize = 16,
-            edgeSize = 16,
-            insets   = { left = 3, right = 3, top = 3, bottom = 3 },
-        })
-        frame:SetBackdropColor(0, 0, 0, 0.4)
-        frame:SetBackdropBorderColor(0.3, 0.3, 0.3)
-    end
+    StyleText(settingsLabel, "HEADER")
 
     ------------------------------------------------
     -- ACTION PAGE CONTENT
@@ -266,7 +247,7 @@ local function BuildConfigFrame()
     local spellLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     spellLabel:SetPoint("TOPLEFT", actionPage, "TOPLEFT", 8, -4)
     spellLabel:SetText("Spell name or ID:")
-	StyleText(spellLabel, "LABEL")
+    StyleText(spellLabel, "LABEL")
 
     local spellEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
     spellEdit:SetAutoFocus(false)
@@ -280,7 +261,7 @@ local function BuildConfigFrame()
 
     -- Between label and Load
     spellEdit:ClearAllPoints()
-    spellEdit:SetPoint("LEFT", spellLabel, "RIGHT", 8, 0)
+    spellEdit:SetPoint("LEFT",  spellLabel, "RIGHT", 8, 0)
     spellEdit:SetPoint("RIGHT", loadButton, "LEFT", -32, 0)
 
     local spellIcon = actionPage:CreateTexture(nil, "OVERLAY")
@@ -291,7 +272,7 @@ local function BuildConfigFrame()
     spellInfoText:SetPoint("TOPLEFT", spellLabel, "BOTTOMLEFT", 0, -4)
     spellInfoText:SetWidth(420)
     spellInfoText:SetJustifyH("LEFT")
-	StyleText(spellInfoText, "HINT")
+    StyleText(spellInfoText, "HINT")
 
     local currentSpellID
 
@@ -366,9 +347,7 @@ local function BuildConfigFrame()
         if configFrame.macroEdit then
             local macroText = string.format(
                 "#showtooltip %s\n/run PE.FireBubble(%d)\n/cast %s",
-                name,
-                spellID,
-                name
+                name, spellID, name
             )
             configFrame.macroEdit:SetText(macroText)
         end
@@ -383,7 +362,7 @@ local function BuildConfigFrame()
     local triggerLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     triggerLabel:SetPoint("TOPLEFT", spellInfoText, "BOTTOMLEFT", 0, -12)
     triggerLabel:SetText("When should Copporclang speak?")
-	StyleText(triggerLabel, "LABEL")
+    StyleText(triggerLabel, "LABEL")
 
     local triggerDrop = CreateFrame("Frame", "PersonaEngineTriggerDrop", actionPage, "UIDropDownMenuTemplate")
     triggerDrop:SetPoint("LEFT", triggerLabel, "RIGHT", -10, -4)
@@ -425,7 +404,7 @@ local function BuildConfigFrame()
     local chanceLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanceLabel:SetPoint("TOPLEFT", triggerLabel, "BOTTOMLEFT", 0, -14)
     chanceLabel:SetText("Chance (1 in N):")
-	StyleText(chanceLabel, "LABEL")
+    StyleText(chanceLabel, "LABEL")
 
     local chanceEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
     chanceEdit:SetSize(60, 20)
@@ -438,8 +417,8 @@ local function BuildConfigFrame()
     local enabledCheck
     if UI and UI.CreateCheckbox then
         enabledCheck = UI.CreateCheckbox(actionPage, {
-            label   = "Enabled",
-            point   = { "LEFT", chanceEdit, "RIGHT", 20, 0 },
+            label = "Enabled",
+            point = { "LEFT", chanceEdit, "RIGHT", 20, 0 },
             checked = true,
         })
     else
@@ -449,6 +428,9 @@ local function BuildConfigFrame()
         enabledCheck:SetChecked(true)
     end
     configFrame.enabledCheck = enabledCheck
+    if enabledCheck.Text then
+        StyleText(enabledCheck.Text, "LABEL")
+    end
 
     ------------------------------------------------
     -- Channels
@@ -457,10 +439,10 @@ local function BuildConfigFrame()
     local chanLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanLabel:SetPoint("TOPLEFT", chanceLabel, "BOTTOMLEFT", 0, -14)
     chanLabel:SetText("Channels:")
-	StyleText(chanLabel, "LABEL")
+    StyleText(chanLabel, "LABEL")
 
-    local chans = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
-    local chanChecks = {}
+    local chans       = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
+    local chanChecks  = {}
     local lastInRow
     local row2Anchor
 
@@ -471,6 +453,7 @@ local function BuildConfigFrame()
         else
             cb = CreateFrame("CheckButton", nil, actionPage, "InterfaceOptionsCheckButtonTemplate")
             cb.Text:SetText(chan)
+            StyleText(cb.Text, "LABEL")
         end
 
         if i == 1 then
@@ -491,115 +474,128 @@ local function BuildConfigFrame()
 
     configFrame.channelCheckboxes = chanChecks
 
-	------------------------------------------------
-	-- Phrase editor: shared multiline widget
-	------------------------------------------------
-	local phraseScroll, phraseEdit = UI and UI.CreateMultilineEdit and UI.CreateMultilineEdit(actionPage, {
-		name        = "PersonaEnginePhraseScroll",
-		point       = { "TOPLEFT",     phraseLabel, "BOTTOMLEFT", -4, -6 },
-		point2      = { "BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, 130 },
-		fontObject  = ChatFontNormal,   -- matches macro UI text
-		textScale   = GLOBAL_FONT_SCALE,
-		padding     = 20,
-		minHeight   = 200,              -- tall-ish buffer
-		extraHeight = 600,              -- keep scrolling room
-		backdrop    = true,             -- use default PersonaEngine border
-		onFocusHighlight = false,       -- for phrases we don't auto-select
-	}) or (function()
-		-- Fallback if UI.CreateMultilineEdit is missing for some reason
-		local scroll = CreateFrame(
-			"ScrollFrame", "PersonaEnginePhraseScroll", actionPage,
-			"UIPanelScrollFrameTemplate,BackdropTemplate"
-		)
-		scroll:SetPoint("TOPLEFT",     phraseLabel, "BOTTOMLEFT", -4, -6)
-		scroll:SetPoint("BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, 130)
-
-		local edit = CreateFrame("EditBox", nil, scroll)
-		edit:SetMultiLine(true)
-		edit:SetAutoFocus(false)
-		edit:SetFontObject(ChatFontNormal)
-		edit:SetJustifyH("LEFT")
-		edit:SetJustifyV("TOP")
-		scroll:SetScrollChild(edit)
-
-		local function SizePhraseEdit()
-			local w = math.max(0, scroll:GetWidth() - 20)
-			edit:SetWidth(w)
-			edit:SetHeight(800)
-			scroll:UpdateScrollChildRect()
-		end
-
-		scroll:SetScript("OnSizeChanged", SizePhraseEdit)
-		edit:SetScript("OnTextChanged", function()
-			scroll:UpdateScrollChildRect()
-		end)
-
-		SizePhraseEdit()
-		return scroll, edit
-	end)()
-
-	-- Apply font scaling/color to the edit box as well
-	StyleText(phraseEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
-
-	configFrame.phraseEdit   = phraseEdit
-	configFrame.phraseScroll = phraseScroll
-
-
-	------------------------------------------------
-    -- Macro snippet: shorter shared multiline widget near bottom
     ------------------------------------------------
-    local macroScroll, macroEdit = UI and UI.CreateMultilineEdit and UI.CreateMultilineEdit(actionPage, {
-        point       = { "BOTTOMLEFT",  actionPage, "BOTTOMLEFT", 4, 40 },
-        point2      = { "BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 40 },
-        fontObject  = ChatFontNormal,
-        textScale   = GLOBAL_FONT_SCALE,
-        padding     = 20,
-        minHeight   = 60,   -- visibly about 3 lines
-        extraHeight = 140,  -- keep some scroll buffer
-        backdrop    = true,
-        onFocusHighlight = true,
-    }) or (function()
-        local scroll = CreateFrame(
+    -- Phrase editor: shared multiline widget
+    ------------------------------------------------
+
+    local phraseLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
+    phraseLabel:SetText("Phrases (one per line):")
+    StyleText(phraseLabel, "LABEL")
+
+    local phraseScroll, phraseEdit
+
+    if UI and UI.CreateMultilineEdit then
+        phraseScroll, phraseEdit = UI.CreateMultilineEdit(actionPage, {
+            name        = "PersonaEnginePhraseScroll",
+            point       = { "TOPLEFT",     phraseLabel, "BOTTOMLEFT", -4, -6 },
+            point2      = { "BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, 130 },
+            fontObject  = ChatFontNormal,
+            textScale   = GLOBAL_FONT_SCALE,
+            padding     = 20,
+            minHeight   = 200,
+            extraHeight = 600,
+            backdrop    = true,
+        })
+    else
+        -- Fallback: basically your original implementation
+        phraseScroll = CreateFrame(
+            "ScrollFrame", "PersonaEnginePhraseScroll", actionPage,
+            "UIPanelScrollFrameTemplate,BackdropTemplate"
+        )
+        phraseScroll:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", -4, -6)
+        phraseScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 130)
+
+        phraseEdit = CreateFrame("EditBox", nil, phraseScroll)
+        phraseEdit:SetMultiLine(true)
+        phraseEdit:SetAutoFocus(false)
+        phraseEdit:SetFontObject(ChatFontNormal)
+        phraseEdit:SetJustifyH("LEFT")
+        phraseEdit:SetJustifyV("TOP")
+        phraseScroll:SetScrollChild(phraseEdit)
+
+        local function SizePhraseEdit()
+            local w = math.max(0, phraseScroll:GetWidth() - 20)
+            phraseEdit:SetWidth(w)
+            phraseEdit:SetHeight(800)
+            phraseScroll:UpdateScrollChildRect()
+        end
+
+        phraseScroll:SetScript("OnSizeChanged", SizePhraseEdit)
+        phraseEdit:SetScript("OnTextChanged", function()
+            phraseScroll:UpdateScrollChildRect()
+        end)
+
+        SizePhraseEdit()
+    end
+
+    StyleText(phraseEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
+    configFrame.phraseEdit   = phraseEdit
+    configFrame.phraseScroll = phraseScroll
+
+    ------------------------------------------------
+    -- Macro snippet: shared multiline widget near bottom
+    ------------------------------------------------
+
+    local macroScroll, macroEdit
+
+    if UI and UI.CreateMultilineEdit then
+        macroScroll, macroEdit = UI.CreateMultilineEdit(actionPage, {
+            point       = { "BOTTOMLEFT",  actionPage, "BOTTOMLEFT", 4, 40 },
+            point2      = { "BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 40 },
+            fontObject  = ChatFontNormal,
+            textScale   = GLOBAL_FONT_SCALE,
+            padding     = 20,
+            minHeight   = 60,
+            extraHeight = 140,
+            backdrop    = true,
+            onFocusHighlight = true,
+        })
+    else
+        macroScroll = CreateFrame(
             "ScrollFrame", nil, actionPage,
             "UIPanelScrollFrameTemplate,BackdropTemplate"
         )
-        scroll:SetPoint("BOTTOMLEFT",  actionPage, "BOTTOMLEFT", 4, 40)
-        scroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 40)
-        scroll:SetHeight(60)
+        macroScroll:SetPoint("BOTTOMLEFT",  actionPage, "BOTTOMLEFT", 4, 40)
+        macroScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 40)
+        macroScroll:SetHeight(60)
 
-        local edit = CreateFrame("EditBox", nil, scroll)
-        edit:SetMultiLine(true)
-        edit:SetAutoFocus(false)
-        edit:SetFontObject(ChatFontNormal)
-        edit:SetJustifyH("LEFT")
-        edit:SetJustifyV("TOP")
-        scroll:SetScrollChild(edit)
+        macroEdit = CreateFrame("EditBox", nil, macroScroll)
+        macroEdit:SetMultiLine(true)
+        macroEdit:SetAutoFocus(false)
+        macroEdit:SetFontObject(ChatFontNormal)
+        macroEdit:SetJustifyH("LEFT")
+        macroEdit:SetJustifyV("TOP")
+        macroScroll:SetScrollChild(macroEdit)
 
         local function SizeMacroEdit()
-            local w = math.max(0, scroll:GetWidth() - 20)
-            edit:SetWidth(w)
-            edit:SetHeight(200)
-            scroll:UpdateScrollChildRect()
+            local w = math.max(0, macroScroll:GetWidth() - 20)
+            macroEdit:SetWidth(w)
+            macroEdit:SetHeight(200)
+            macroScroll:UpdateScrollChildRect()
         end
 
-        scroll:SetScript("OnSizeChanged", SizeMacroEdit)
-        edit:SetScript("OnTextChanged", function()
-            scroll:UpdateScrollChildRect()
+        macroScroll:SetScript("OnSizeChanged", SizeMacroEdit)
+        macroEdit:SetScript("OnTextChanged", function()
+            macroScroll:UpdateScrollChildRect()
         end)
-        edit:SetScript("OnEditFocusGained", function(self)
+        macroEdit:SetScript("OnEditFocusGained", function(self)
             self:HighlightText(0, #self:GetText())
         end)
-        edit:SetScript("OnEscapePressed", function(self)
+        macroEdit:SetScript("OnEscapePressed", function(self)
             self:ClearFocus()
         end)
 
         SizeMacroEdit()
-        return scroll, edit
-    end)()
+    end
+
+    local macroLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    macroLabel:SetPoint("BOTTOMLEFT", macroScroll, "TOPLEFT", 4, 2)
+    macroLabel:SetText("Macro snippet:")
+    StyleText(macroLabel, "LABEL")
 
     StyleText(macroEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
     configFrame.macroEdit = macroEdit
-
 
     ------------------------------------------------
     -- Save button (bottom-left)
@@ -627,9 +623,7 @@ local function BuildConfigFrame()
 
         -- Chance
         local n = configFrame.chanceEdit:GetNumber()
-        if n <= 0 then
-            n = 1
-        end
+        if n <= 0 then n = 1 end
         cfg.chance = n
 
         -- Enabled
@@ -682,7 +676,7 @@ local function BuildConfigFrame()
         "Type a spell name or ID and click |cffffff00Load|r.\n" ..
         "Use the macro snippet to add Copporclang's quips to your own macros."
     )
-	StyleText(hint, "HINT")
+    StyleText(hint, "HINT")
 end
 
 ----------------------------------------------------
