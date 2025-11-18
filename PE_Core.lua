@@ -1,10 +1,10 @@
 -- ##################################################
 -- PE_Core.lua
--- Persona Engine core: chat helpers, macro API, bubbles
+-- Persona Engine core helpers + unified Speak API
 -- ##################################################
 
 local MODULE = "Core"
-local PE = PE
+local PE     = PE
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] PE_Core.lua loaded without PE core!|r")
@@ -16,24 +16,23 @@ if PE.LogLoad then
 end
 
 ----------------------------------------------------
--- Chat Rate Limiter
+-- Chat rate limiter (anti-spam safety)
 ----------------------------------------------------
 
--- Prevents macro spam from tripping server throttles.
-local RATE_WINDOW   = 8      -- seconds in sliding window
-local RATE_MAX_MSGS = 5      -- max messages per window
+local RATE_WINDOW_SECONDS = 8      -- sliding window length
+local RATE_MAX_MESSAGES   = 5      -- allowed messages per window
 
 local function PE_CanSendMessage()
     local now = GetTime()
     PE._rateState = PE._rateState or { windowStart = 0, count = 0 }
     local st = PE._rateState
 
-    if now - (st.windowStart or 0) > RATE_WINDOW then
+    if now - (st.windowStart or 0) > RATE_WINDOW_SECONDS then
         st.windowStart = now
-        st.count = 0
+        st.count       = 0
     end
 
-    if st.count >= RATE_MAX_MSGS then
+    if st.count >= RATE_MAX_MESSAGES then
         return false
     end
 
@@ -42,14 +41,13 @@ local function PE_CanSendMessage()
 end
 
 ----------------------------------------------------
--- Speech Permission Helper
+-- Speech permission gate
 ----------------------------------------------------
-
 -- Central gate used by all speech paths.
 -- cfg is optional; if provided, its .enabled flag is honored.
--- NOTE: Macro-only design: no AFK / idle runtime gating here.
+
 function PE.CanSpeak(cfg)
-    -- Global toggle (icon, slash, etc.)
+    -- Global toggle (minimap/brain button, slash, etc.)
     if SR_On ~= 1 then
         return false
     end
@@ -63,7 +61,7 @@ function PE.CanSpeak(cfg)
 end
 
 ----------------------------------------------------
--- Macro State Helper (for speech context)
+-- Macro state helper (context only)
 ----------------------------------------------------
 
 local function PE_GetMacroState()
@@ -73,15 +71,12 @@ local function PE_GetMacroState()
     return "idle"
 end
 
-PE.GetMacroState = PE_GetMacroState
+PE.GetMacroState = PE.GetMacroState or PE_GetMacroState
 
 ----------------------------------------------------
--- Channel Resolver
+-- Channel resolver
 ----------------------------------------------------
 
--- For automated/event-driven speech we *used* to remap SAY/YELL.
--- For macro-only chatter this is still nice for SR() calls.
--- FireBubble can explicitly bypass this resolver.
 local function PE_ResolveChannel(channel)
     channel = channel or "SAY"
 
@@ -89,32 +84,32 @@ local function PE_ResolveChannel(channel)
         return "EMOTE"
     end
 
-    -- Instance group → prefer INSTANCE_CHAT over SAY/YELL
-    if IsInGroup and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+    -- Instance group: prefer INSTANCE_CHAT
+    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
         if channel == "SAY" or channel == "YELL" then
             return "INSTANCE_CHAT"
         end
         return channel
     end
 
-    -- Raid → prefer RAID
-    if IsInRaid and IsInRaid() then
+    -- Raid: prefer RAID
+    if IsInRaid() then
         if channel == "SAY" or channel == "YELL" then
             return "RAID"
         end
         return channel
     end
 
-    -- Party → prefer PARTY
-    if IsInGroup and IsInGroup() then
+    -- Party: prefer PARTY
+    if IsInGroup() then
         if channel == "SAY" or channel == "YELL" then
             return "PARTY"
         end
         return channel
     end
 
-    -- Solo fallback: in combat, map SAY/YELL → EMOTE
-    local inGroup  = (IsInGroup and IsInGroup()) or (IsInRaid and IsInRaid()) or false
+    -- Solo + combat: SAY/YELL become EMOTE
+    local inGroup  = IsInGroup() or IsInRaid()
     local inCombat = UnitAffectingCombat and UnitAffectingCombat("player")
 
     if not inGroup and inCombat and (channel == "SAY" or channel == "YELL") then
@@ -125,7 +120,7 @@ local function PE_ResolveChannel(channel)
 end
 
 ----------------------------------------------------
--- Phrase Selection Helper
+-- Phrase selection helper
 ----------------------------------------------------
 
 local function PE_SelectLine(pool)
@@ -144,26 +139,26 @@ local function PE_SelectLine(pool)
     return line
 end
 
--- Expose in case other modules want it
 PE.SelectLine = PE.SelectLine or PE_SelectLine
 
 ----------------------------------------------------
--- Unified Send Helper
+-- Unified send helper
 ----------------------------------------------------
-
 -- opts:
---   opts.cfg          - optional spell config (for .enabled)
---   opts.bypassResolve- true = don't remap channel (used by FireBubble)
---   opts.eventId      - optional event id for inflection context
---   opts.ctx          - optional context table for inflection
+--   opts.cfg           - optional spell config (.enabled honored)
+--   opts.bypassResolve - true = don't remap channel (FireBubble only)
+--   opts.eventId       - optional event id for inflection
+--   opts.ctx           - optional context table
 
 local function PE_SendPersonaMessage(text, channel, opts)
     if not text or text == "" then
         return
     end
+
     if not PE.CanSpeak(opts and opts.cfg) then
         return
     end
+
     if not PE_CanSendMessage() then
         return
     end
@@ -189,18 +184,16 @@ local function PE_SendPersonaMessage(text, channel, opts)
     end
 end
 
--- Expose safe send helper
-PE.SendPersonaMessage = PE_SendPersonaMessage
+PE.SendPersonaMessage = PE.SendPersonaMessage or PE_SendPersonaMessage
 
 ----------------------------------------------------
--- Delayed send helper (for reaction-style lines)
+-- Delayed send helper (reaction lines)
 ----------------------------------------------------
 
 local function PE_SchedulePersonaMessage(text, channel, opts, delay)
     delay = delay or 0
 
     if delay <= 0 or not (C_Timer and C_Timer.After) then
-        -- Immediate send (or no timer available)
         PE_SendPersonaMessage(text, channel, opts)
         return
     end
@@ -240,6 +233,7 @@ local function PE_SpeakPool(spec)
     if not pool or #pool == 0 then
         return
     end
+
     if chance < 1 then
         chance = 1
     end
@@ -247,7 +241,7 @@ local function PE_SpeakPool(spec)
         return
     end
 
-    local line = (PE.SelectLine and PE.SelectLine(pool)) or PE_SelectLine(pool)
+    local line = PE.SelectLine and PE.SelectLine(pool) or PE_SelectLine(pool)
     if not line then
         return
     end
@@ -258,7 +252,7 @@ local function PE_SpeakPool(spec)
     })
 end
 
--- 2) phraseKey-based speech using phrase engine (if present)
+-- 2) phraseKey-based speech
 local function PE_SpeakPhraseKey(phraseKey, spec)
     if not phraseKey then
         return
@@ -280,7 +274,8 @@ local function PE_SpeakPhraseKey(phraseKey, spec)
     local cfg     = spec.cfg
     local ctx     = spec.ctx or {}
     local stateId = spec.stateId or (PE_GetMacroState and PE_GetMacroState() or "idle")
-    ctx.stateId   = ctx.stateId or stateId
+
+    ctx.stateId = ctx.stateId or stateId
 
     local eventId = spec.eventId or ("PHRASE_" .. tostring(phraseKey))
     local line    = PE.Phrases.PickLine(phraseKey, ctx, stateId, eventId)
@@ -290,10 +285,10 @@ local function PE_SpeakPhraseKey(phraseKey, spec)
     end
 
     PE_SendPersonaMessage(line, channel, {
-        cfg          = cfg,
-        eventId      = eventId,
-        ctx          = ctx,
-        bypassResolve= spec.bypassResolve,
+        cfg           = cfg,
+        eventId       = eventId,
+        ctx           = ctx,
+        bypassResolve = spec.bypassResolve,
     })
 end
 
@@ -315,14 +310,14 @@ local function PE_SpeakLiteral(text, spec)
     local channel = spec.channel or "SAY"
 
     PE_SendPersonaMessage(text, channel, {
-        cfg          = spec.cfg,
-        eventId      = spec.eventId or "LITERAL",
-        ctx          = spec.ctx,
-        bypassResolve= spec.bypassResolve,
+        cfg           = spec.cfg,
+        eventId       = spec.eventId or "LITERAL",
+        ctx           = spec.ctx,
+        bypassResolve = spec.bypassResolve,
     })
 end
 
--- 4) Spell bubble helper (shared by FireBubble and Speak)
+-- 4) Spell bubble helper (used by FireBubble and Speak)
 local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
     if not spellID then
         return
@@ -336,12 +331,10 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
         return
     end
 
-    -- Global + per-spell enable flags
     if not PE.CanSpeak(cfg) then
         return
     end
 
-    -- Chance check
     local chance = cfg.chance or 10
     if chance < 1 then
         chance = 1
@@ -350,7 +343,7 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
         return
     end
 
-    -- Choose channel (prioritize SAY, then YELL, then EMOTE)
+    -- Channel selection (prefer SAY/YELL/EMOTE; then first enabled)
     local channel = "SAY"
     if cfg.channels and next(cfg.channels) then
         if cfg.channels.SAY then
@@ -369,7 +362,7 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
         end
     end
 
-    -- Build context with macro-state info
+    -- Context
     local baseCtx = cfg.ctx or {}
     local ctx     = {}
     for k, v in pairs(baseCtx) do
@@ -383,7 +376,6 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
 
     local eventId = cfg.eventId or ("BUBBLE_" .. tostring(spellID))
 
-    -- Decide phrase source: phraseKey engine vs static phrases
     local line
     if cfg.phraseKey and PE.Phrases and PE.Phrases.PickLine then
         line = PE.Phrases.PickLine(cfg.phraseKey, ctx, stateId, eventId)
@@ -405,19 +397,17 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
     local delay = 0
 
     if isReactionOverride == true then
-        -- Force reaction-style delay
+        -- Forced reaction
         local minD = cfg.reactionDelayMin or 1.0
         local maxD = cfg.reactionDelayMax or 2.5
         if maxD < minD then
             maxD = minD
         end
         delay = minD + math.random() * (maxD - minD)
-
     elseif isReactionOverride == false then
         delay = 0
-
     else
-        -- No override → probabilistic reaction
+        -- Probabilistic reaction
         local rc = cfg.reactionChance or 0
         if rc > 0 and math.random() < rc then
             local minD = cfg.reactionDelayMin or 1.0
@@ -429,15 +419,15 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
         end
     end
 
-    -- FireBubble bypasses resolver so macros can use true SAY/YELL/etc.
+    -- FireBubble bypasses resolver (macros can choose SAY/YELL/etc.)
     PE_SchedulePersonaMessage(
         line,
         channel,
         {
-            cfg          = cfg,
-            bypassResolve= true,
-            eventId      = eventId,
-            ctx          = ctx,
+            cfg           = cfg,
+            bypassResolve = true,
+            eventId       = eventId,
+            ctx           = ctx,
         },
         delay
     )
@@ -455,13 +445,6 @@ end
 -- Unified Macro API: PE.Speak(...)
 ----------------------------------------------------
 
--- Usage examples:
---   /run PE.Speak(187650)           -- spell bubble (by ID)
---   /run PE.Speak(187650, true)     -- force reaction delay
---   /run PE.Speak("ENTER_COMBAT")   -- phraseKey or literal
---   /run PE.Speak("Hi there", { channel="EMOTE" })
---   /run PE.Speak({ phr={...}, channel="SAY" }) -- SR-style pool
-
 function PE.Speak(...)
     local argc = select("#", ...)
     if argc == 0 then
@@ -471,22 +454,20 @@ function PE.Speak(...)
     -- Single argument
     if argc == 1 then
         local spec = select(1, ...)
-        local t = type(spec)
+        local t    = type(spec)
 
         if t == "number" then
-            -- Treat as spellID bubble
+            -- spellID bubble
             return PE_SpeakSpellBubble(spec, nil, nil)
-
         elseif t == "string" then
-            -- Try phraseKey first, then literal
+            -- phraseKey or literal
             if PE.Phrases and PE.Phrases.registry and PE.Phrases.registry[spec] then
                 return PE_SpeakPhraseKey(spec, nil)
             else
                 return PE_SpeakLiteral(spec, nil)
             end
-
         elseif t == "table" then
-            -- Explicit table spec
+            -- explicit table
             if spec.spellID then
                 return PE_SpeakSpellBubble(spec.spellID, spec.isReactionOverride, spec.cfg or spec)
             end
@@ -507,12 +488,11 @@ function PE.Speak(...)
     -- Two or more arguments
     local first  = select(1, ...)
     local second = select(2, ...)
-    local t1 = type(first)
+    local t1     = type(first)
 
     if t1 == "number" then
         -- spellID, isReactionOverride
         return PE_SpeakSpellBubble(first, second, nil)
-
     elseif t1 == "string" then
         -- phraseKey or literal with options table
         if type(second) == "table" or second == nil then
@@ -523,20 +503,19 @@ function PE.Speak(...)
             end
         end
     end
-
-    -- If we get here, nothing matched; fail silently.
+    -- silently ignore junk
 end
 
 ----------------------------------------------------
--- Legacy Public APIs (kept for compatibility)
+-- Legacy Public APIs (compat)
 ----------------------------------------------------
 
--- Core SR Logic (pool-based random speech)
+-- SR pool
 function SR(a)
     return PE_SpeakPool(a)
 end
 
--- Phrase Builder / Combo Engine
+-- Phrase combiner
 function SetP(i, t)
     if type(t) == "table" then
         P[i] = t[math.random(#t)]
@@ -569,21 +548,21 @@ function SpeakP(c, h, n)
 end
 
 ----------------------------------------------------
--- Macro usage helpers (small utility)
+-- Macro usage helper
 ----------------------------------------------------
 
-PE.Macros = PE.Macros or {}
-local Macros = PE.Macros
+PE.Macros      = PE.Macros or {}
+local Macros   = PE.Macros
 
 function Macros.GetUsage()
     local numGlobal, numChar, maxGlobal, maxChar = GetNumMacros()
     return {
-        globalUsed = numGlobal,
-        globalFree = maxGlobal - numGlobal,
-        globalMax  = maxGlobal,
-        charUsed   = numChar,
-        charFree   = maxChar - numChar,
-        charMax    = maxChar,
+        globalUsed  = numGlobal,
+        globalFree  = maxGlobal - numGlobal,
+        globalMax   = maxGlobal,
+        charUsed    = numChar,
+        charFree    = maxChar - numChar,
+        charMax     = maxChar,
     }
 end
 
@@ -591,13 +570,8 @@ end
 -- Module registration
 ----------------------------------------------------
 
-if PE.LogInit then
-    PE.LogInit(MODULE)
-end
-
-if PE.RegisterModule then
-    PE.RegisterModule("Core", {
-        name  = "Core Systems",
-        class = "core",
-    })
-end
+PE.LogInit(MODULE)
+PE.RegisterModule("Core", {
+    name  = "Core Systems",
+    class = "core",
+})

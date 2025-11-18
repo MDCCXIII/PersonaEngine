@@ -4,7 +4,7 @@
 -- ##################################################
 
 local MODULE = "NPCMemory"
-local PE = PE
+local PE     = PE
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] PE_NPCMemory.lua loaded without PE core!|r")
@@ -16,8 +16,8 @@ if PE.LogLoad then
 end
 
 PE.NPCMemory = PE.NPCMemory or {}
-local NPC     = PE.NPCMemory
 
+local NPC     = PE.NPCMemory
 local Runtime = PE.Runtime or {}
 PE.Runtime    = Runtime
 
@@ -27,9 +27,9 @@ PE.Runtime    = Runtime
 -- PersonaEngineDB.npc = {
 --   known = {
 --     ["Jaina Proudmoore"] = {
---        count    = 12,
---        lastSeen = timestamp,
---        lastZone = "Stormwind City",
+--       count    = 12,
+--       lastSeen = timestamp,
+--       lastZone = "Stormwind City",
 --     },
 --   },
 -- }
@@ -47,11 +47,11 @@ local function TouchNPC(name)
         return
     end
 
-    local root  = EnsureNPCDB()
-    local known = root.known
-    local entry = known[name]
-    local now   = time()
-    local zone  = GetRealZoneText() or ""
+    local root    = EnsureNPCDB()
+    local known   = root.known
+    local entry   = known[name]
+    local now     = time()
+    local zone    = GetRealZoneText() or ""
 
     if not entry then
         entry = {

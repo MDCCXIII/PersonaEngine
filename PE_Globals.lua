@@ -4,24 +4,19 @@
 -- module registration, and startup reporting
 -- ##################################################
 
--- Root namespace (single global table)
 if not PE then
     PE = {}
 end
 
 ----------------------------------------------------
--- Logging Level
+-- Logging Level + core logger
 ----------------------------------------------------
 
 PE_LogLevel = PE_LogLevel or 3
 -- Levels:
 -- 0 NONE, 1 ERROR, 2 WARN, 3 INFO, 4 DEBUG, 5 TRACE
 
-----------------------------------------------------
--- Logging Function
-----------------------------------------------------
-
-function PE.Log(a, ...)
+local function PersonaEngine_Log(levelOrMsg, ...)
     if not PE_LogLevel then
         PE_LogLevel = 3
     end
@@ -29,12 +24,12 @@ function PE.Log(a, ...)
     local lvl
     local parts = {}
 
-    if type(a) == "number" then
-        lvl = a
+    if type(levelOrMsg) == "number" then
+        lvl = levelOrMsg
     else
         lvl = 3
-        if a ~= nil then
-            table.insert(parts, a)
+        if levelOrMsg ~= nil then
+            table.insert(parts, levelOrMsg)
         end
     end
 
@@ -51,8 +46,8 @@ function PE.Log(a, ...)
         return
     end
 
-    local final = table.concat(parts, " ")
-    local t = date("%H:%M:%S")
+    local final  = table.concat(parts, " ")
+    local tstamp = date("%H:%M:%S")
 
     local colors = {
         [1] = "|cffff0000", -- ERROR
@@ -63,8 +58,10 @@ function PE.Log(a, ...)
     }
 
     local prefix = colors[lvl] or "|cffffffff"
-    print(prefix .. "[Persona " .. t .. "]|r " .. final)
+    print(prefix .. "[Persona " .. tstamp .. "]|r " .. final)
 end
+
+PE.Log = PE.Log or PersonaEngine_Log
 
 ----------------------------------------------------
 -- Module load/init logging helpers
@@ -83,13 +80,13 @@ end
 ----------------------------------------------------
 
 local MODULE = "Globals"
-PE.Log(4, ("|cff00ff88[PersonaEngine]|r Loading %s ..."):format(MODULE))
+PE.LogLoad(MODULE)
 
 ----------------------------------------------------
--- Expected module list (for status report)
+-- Expected module list (lint only)
 ----------------------------------------------------
 
--- Only the modules we actually ship in this minimal baseline.
+-- Keep this aligned with PersonaEngine.toc for now.
 PE.ExpectedModules = {
     "Globals",
     "Core",
@@ -103,7 +100,7 @@ PE.ExpectedModules = {
 -- Module Registry + Load Metadata
 ----------------------------------------------------
 
-PE.Modules = PE.Modules or {}
+PE.Modules      = PE.Modules or {}
 PE._loadStarted = PE._loadStarted or (debugprofilestop and debugprofilestop() or nil)
 
 function PE.RegisterModule(id, info)
@@ -111,11 +108,11 @@ function PE.RegisterModule(id, info)
         return
     end
 
-    info = info or {}
-    info.id = id
-    info.name = info.name or id
-    info.class = info.class or "core"
-    info.ok = (info.ok ~= false)
+    info        = info or {}
+    info.id     = id
+    info.name   = info.name or id
+    info.class  = info.class or "core"
+    info.ok     = (info.ok ~= false)
     info.loadedAt = debugprofilestop and debugprofilestop() or nil
 
     PE.Modules[id] = info
@@ -126,32 +123,35 @@ end
 ----------------------------------------------------
 
 local function PersonaEngine_ReportStatus()
-    local mods = PE.Modules or {}
-    local total, okCount, badCount = 0, 0, 0
-    local byClass = {}
+    local mods       = PE.Modules or {}
+    local total      = 0
+    local okCount    = 0
+    local badCount   = 0
+    local byClass    = {}
 
     for _, m in pairs(mods) do
         total = total + 1
+
         if m.ok == false then
             badCount = badCount + 1
         else
             okCount = okCount + 1
         end
 
-        local c = m.class or "other"
-        byClass[c] = byClass[c] or { total = 0, bad = 0 }
-        byClass[c].total = byClass[c].total + 1
+        local class = m.class or "other"
+        byClass[class] = byClass[class] or { total = 0, bad = 0 }
+        byClass[class].total = byClass[class].total + 1
         if m.ok == false then
-            byClass[c].bad = byClass[c].bad + 1
+            byClass[class].bad = byClass[class].bad + 1
         end
     end
 
     ------------------------------------------------
     -- LINT: missing expected modules
     ------------------------------------------------
-
-    local missing = {}
+    local missing    = {}
     local registered = {}
+
     for id in pairs(mods) do
         registered[id] = true
     end
@@ -160,26 +160,26 @@ local function PersonaEngine_ReportStatus()
         if not registered[id] then
             table.insert(missing, id)
             mods[id] = {
-                id = id,
-                name = id,
+                id    = id,
+                name  = id,
                 class = "unknown",
-                ok = false,
+                ok    = false,
                 notes = "Module never registered (missing PE.RegisterModule?)",
             }
             badCount = badCount + 1
-            total = total + 1
+            total    = total + 1
         end
     end
 
     ------------------------------------------------
-    -- Class summary
+    -- Class summary text
     ------------------------------------------------
-
     local classBits = {}
     for cls, count in pairs(byClass) do
         table.insert(classBits, string.format("%s:%d", cls, count.total))
     end
     table.sort(classBits)
+
     local classSummary = (#classBits > 0) and table.concat(classBits, ", ") or "none"
 
     local elapsed = nil
@@ -192,7 +192,6 @@ local function PersonaEngine_ReportStatus()
     ------------------------------------------------
     -- Final output formatting
     ------------------------------------------------
-
     if badCount == 0 then
         local summary = string.format(
             "Copporclang's persona core online: %d subsystems active (%s).",
@@ -202,6 +201,7 @@ local function PersonaEngine_ReportStatus()
         if elapsed then
             summary = summary .. string.format(" Boot time: %.1f ms.", elapsed)
         end
+
         print(prefix .. summary .. " All gears spinning; any explosions are absolutely intentional.")
 
         for _, m in pairs(mods) do
@@ -219,6 +219,7 @@ local function PersonaEngine_ReportStatus()
         if elapsed then
             summary = summary .. string.format(" Boot time: %.1f ms.", elapsed)
         end
+
         print(prefix .. summary .. " System will improvise with duct tape and optimism.")
 
         for _, m in pairs(mods) do
@@ -235,7 +236,7 @@ local function PersonaEngine_ReportStatus()
 end
 
 ----------------------------------------------------
--- Fire status report after addon load
+-- Fire report after addon load
 ----------------------------------------------------
 
 do
@@ -253,7 +254,8 @@ do
             self._reported = true
             local ok, err = pcall(PersonaEngine_ReportStatus)
             if not ok then
-                print("|cff66ccff[PersonaEngine]|r Status check exploded: |cffff5555" .. tostring(err) .. "|r")
+                print("|cff66ccff[PersonaEngine]|r Status check exploded: |cffff5555" ..
+                    tostring(err) .. "|r")
             end
         end
     end)
@@ -266,7 +268,7 @@ end
 PE.Events         = PE.Events or {}
 PE.States         = PE.States or {}
 PE.Config         = PE.Config or {}
-PE.Phrases        = PE.Phrases or {}      -- phrase engine placeholder
+PE.Phrases        = PE.Phrases or {}
 PE.Runtime        = PE.Runtime or {}
 PE.DynamicPhrases = PE.DynamicPhrases or {}
 PE.Structures     = PE.Structures or {}
@@ -276,32 +278,34 @@ PE.Words          = PE.Words or {}
 -- SavedVariables bootstrap
 ----------------------------------------------------
 
-PersonaEngineDB = PersonaEngineDB or {}
+PersonaEngineDB                    = PersonaEngineDB or {}
+PersonaEngineDB.DevMode            = PersonaEngineDB.DevMode or false
+PersonaEngineDB.profiles           = PersonaEngineDB.profiles or {}
+PersonaEngineDB.currentProfileKey  = PersonaEngineDB.currentProfileKey or "Copporclang_Default"
 
-PersonaEngineDB.DevMode         = PersonaEngineDB.DevMode or false
-PersonaEngineDB.profiles        = PersonaEngineDB.profiles or {}
-PersonaEngineDB.currentProfileKey = PersonaEngineDB.currentProfileKey or "Copporclang_Default"
-PersonaEngineDB.minimap         = PersonaEngineDB.minimap or { hide = false }
-PersonaEngineDB.button          = PersonaEngineDB.button or {}
+-- Minimap settings (legacy; kept in case we re-add a minimap button later)
+PersonaEngineDB.minimap = PersonaEngineDB.minimap or { hide = false }
 
--- Default draggable button placement
+-- Free-floating icon defaults
 PersonaEngine_ButtonDefaults = {
-    point   = "TOPRIGHT",
-    relPoint= "TOPRIGHT",
-    x       = -150,
-    y       = -170,
-    scale   = 1.2,
-    strata  = "MEDIUM",
-    level   = 1,
+    point    = "TOPRIGHT",
+    relPoint = "TOPRIGHT",
+    x        = -150,
+    y        = -170,
+    scale    = 1.2,
+    strata   = "MEDIUM",
+    level    = 1,
 }
+
+PersonaEngineDB.button = PersonaEngineDB.button or {}
 
 ----------------------------------------------------
 -- Legacy SR fields (until fully replaced)
 ----------------------------------------------------
 
-SR_On = SR_On or 1   -- 1 = speech enabled, 0 = disabled
-P     = P     or {}  -- phrase slots table
-lastP = lastP or nil -- last line spoken
+SR_On = SR_On or 1
+P     = P     or {}
+lastP = lastP or nil
 
 ----------------------------------------------------
 -- Voice Lines (loaded once)
@@ -328,55 +332,11 @@ PE_EngineOffScaryLines = PE_EngineOffScaryLines or {
 }
 
 ----------------------------------------------------
--- Minimal Spell Config System (no separate PE_SpellDB.lua)
-----------------------------------------------------
-
-PersonaEngineDB.spells = PersonaEngineDB.spells or {}
-
-PE.TRIGGER_MODES = PE.TRIGGER_MODES or {
-    ON_CAST  = "On Cast",
-    ON_READY = "When Cooldown Ready",
-    ON_CD    = "When Cooldown Starts",
-}
-
---- Get or create the config table for a spellID.
---  This is intentionally simple; richer logic can live in a future module.
-function PE.GetOrCreateSpellConfig(spellID)
-    if not spellID then
-        return nil
-    end
-
-    spellID = tonumber(spellID)
-    if not spellID then
-        return nil
-    end
-
-    local spells = PersonaEngineDB.spells
-    local cfg = spells[spellID]
-
-    if not cfg then
-        cfg = {
-            enabled       = true,
-            chance        = 10,
-            channels      = { SAY = true },
-            phrases       = {},
-            trigger       = "ON_CAST",
-            -- optional future fields:
-            -- phraseKey     = nil,
-            -- reactionChance= 0,
-            -- reactionDelayMin = 1.0,
-            -- reactionDelayMax = 2.5,
-            -- ctx           = {},
-        }
-        spells[spellID] = cfg
-    end
-
-    return cfg
-end
-
-----------------------------------------------------
 -- Bottom-of-file Init + Register
 ----------------------------------------------------
 
-PE.Log(4, ("|cff00ff88[PersonaEngine]|r %s initialized."):format(MODULE))
-PE.RegisterModule("Globals", { name = "Global Systems", class = "core" })
+PE.LogInit(MODULE)
+PE.RegisterModule("Globals", {
+    name  = "Global Systems",
+    class = "core",
+})

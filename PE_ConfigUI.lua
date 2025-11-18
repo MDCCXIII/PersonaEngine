@@ -1,5 +1,10 @@
+-- ##################################################
+-- PE_ConfigUI.lua
+-- Persona Engine spell-bubble configuration UI
+-- ##################################################
+
 local MODULE = "ConfigUI"
-local PE = PE
+local PE     = PE
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -10,17 +15,20 @@ if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
 
--- ##################################################
--- Persona Engine - Config UI
--- ##################################################
-
-local configFrame
-
 ----------------------------------------------------
--- Safe wrapper for spell lookups
+-- Layout constants
 ----------------------------------------------------
 
-local function PE_GetSpellInfoByInput(input)
+local CONFIG_FRAME_WIDTH   = 460
+local CONFIG_FRAME_HEIGHT  = 430
+local PHRASE_SCROLL_WIDTH  = 400
+local PHRASE_SCROLL_HEIGHT = 200
+
+----------------------------------------------------
+-- Spell lookup wrapper
+----------------------------------------------------
+
+local function GetSpellInfoByInput(input)
     if not input or input == "" then
         return
     end
@@ -28,7 +36,7 @@ local function PE_GetSpellInfoByInput(input)
     local spellID = tonumber(input)
     local name, icon, id
 
-    -- First try C_Spell (Dragonflight+)
+    -- Dragonflight API
     if C_Spell and C_Spell.GetSpellInfo then
         if spellID then
             local info = C_Spell.GetSpellInfo(spellID)
@@ -43,7 +51,7 @@ local function PE_GetSpellInfoByInput(input)
         end
     end
 
-    -- Fallback to old GetSpellInfo if it exists
+    -- Classic GetSpellInfo fallback
     if GetSpellInfo then
         if spellID then
             name, _, icon = GetSpellInfo(spellID)
@@ -51,6 +59,7 @@ local function PE_GetSpellInfoByInput(input)
         else
             name, _, icon, _, _, _, id = GetSpellInfo(input)
         end
+
         if name then
             return name, icon, id
         end
@@ -60,8 +69,10 @@ local function PE_GetSpellInfoByInput(input)
 end
 
 ----------------------------------------------------
--- Build Config Frame
+-- Config frame construction
 ----------------------------------------------------
+
+local configFrame
 
 local function BuildConfigFrame()
     if configFrame then
@@ -69,13 +80,13 @@ local function BuildConfigFrame()
     end
 
     configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
-    configFrame:SetSize(460, 430)
+    configFrame:SetSize(CONFIG_FRAME_WIDTH, CONFIG_FRAME_HEIGHT)
     configFrame:SetPoint("CENTER")
     configFrame:SetMovable(true)
     configFrame:EnableMouse(true)
     configFrame:RegisterForDrag("LeftButton")
     configFrame:SetScript("OnDragStart", configFrame.StartMoving)
-    configFrame:SetScript("OnDragStop", configFrame.StopMovingOrSizing)
+    configFrame:SetScript("OnDragStop",  configFrame.StopMovingOrSizing)
     configFrame:Hide()
 
     local title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -125,7 +136,7 @@ local function BuildConfigFrame()
             return
         end
 
-        local name, icon, spellID = PE_GetSpellInfoByInput(txt)
+        local name, icon, spellID = GetSpellInfoByInput(txt)
         if not name then
             spellInfoText:SetText("|cffff2020Unknown spell.|r")
             spellIcon:SetTexture(nil)
@@ -157,11 +168,11 @@ local function BuildConfigFrame()
 
         -- Channels
         local chanCfg = cfg.channels or {}
-        configFrame.channelCheckboxes.SAY:SetChecked(chanCfg.SAY)
-        configFrame.channelCheckboxes.YELL:SetChecked(chanCfg.YELL)
-        configFrame.channelCheckboxes.EMOTE:SetChecked(chanCfg.EMOTE)
-        configFrame.channelCheckboxes.PARTY:SetChecked(chanCfg.PARTY)
-        configFrame.channelCheckboxes.RAID:SetChecked(chanCfg.RAID)
+        configFrame.channelCheckboxes.SAY:SetChecked(  chanCfg.SAY   )
+        configFrame.channelCheckboxes.YELL:SetChecked( chanCfg.YELL  )
+        configFrame.channelCheckboxes.EMOTE:SetChecked(chanCfg.EMOTE )
+        configFrame.channelCheckboxes.PARTY:SetChecked(chanCfg.PARTY )
+        configFrame.channelCheckboxes.RAID:SetChecked( chanCfg.RAID  )
 
         -- Enabled
         configFrame.enabledCheck:SetChecked(cfg.enabled ~= false)
@@ -178,7 +189,7 @@ local function BuildConfigFrame()
         end
         configFrame.phraseEdit:SetText(buf)
 
-        -- Macro snippet: bubble-friendly macro using PE.FireBubble
+        -- Macro snippet
         if configFrame.macroEdit then
             local macroText = string.format(
                 "#showtooltip %s\n/run PE.FireBubble(%d)\n/cast %s",
@@ -218,6 +229,7 @@ local function BuildConfigFrame()
         }
 
         local info = UIDropDownMenu_CreateInfo()
+
         for key, label in pairs(triggerModes) do
             info.text    = label
             info.value   = key
@@ -264,8 +276,8 @@ local function BuildConfigFrame()
     chanLabel:SetPoint("TOPLEFT", chanceLabel, "BOTTOMLEFT", 0, -14)
     chanLabel:SetText("Channels:")
 
-    local chans       = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
-    local chanChecks  = {}
+    local chans      = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
+    local chanChecks = {}
     local lastInRow
     local row2Anchor
 
@@ -286,7 +298,7 @@ local function BuildConfigFrame()
         cb.Text:SetText(chan)
         cb:SetChecked(chan == "SAY")
         chanChecks[chan] = cb
-        lastInRow = cb
+        lastInRow        = cb
     end
 
     configFrame.channelCheckboxes = chanChecks
@@ -301,17 +313,17 @@ local function BuildConfigFrame()
     local scrollFrame = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", configFrame, "UIPanelScrollFrameTemplate")
     scrollFrame:ClearAllPoints()
     scrollFrame:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", 0, -4)
-    scrollFrame:SetSize(400, 200)
+    scrollFrame:SetSize(PHRASE_SCROLL_WIDTH, PHRASE_SCROLL_HEIGHT)
 
     local phraseEdit = CreateFrame("EditBox", nil, scrollFrame)
     phraseEdit:SetMultiLine(true)
     phraseEdit:SetAutoFocus(false)
     phraseEdit:SetFontObject(ChatFontNormal)
-    phraseEdit:SetWidth(380)
-    phraseEdit:SetHeight(200)
+    phraseEdit:SetWidth(PHRASE_SCROLL_WIDTH - 20)
+    phraseEdit:SetHeight(PHRASE_SCROLL_HEIGHT)
     scrollFrame:SetScrollChild(phraseEdit)
 
-    configFrame.phraseEdit   = phraseEdit
+    configFrame.phraseEdit  = phraseEdit
     configFrame.phraseScroll = scrollFrame
 
     ------------------------------------------------
@@ -349,7 +361,7 @@ local function BuildConfigFrame()
         end
         cfg.chance = n
 
-        -- Enabled (explicit true/false)
+        -- Enabled
         cfg.enabled = configFrame.enabledCheck:GetChecked() and true or false
 
         -- Channels
@@ -365,7 +377,7 @@ local function BuildConfigFrame()
 
         -- Phrases
         cfg.phrases = {}
-        local txt = configFrame.phraseEdit:GetText() or ""
+        local txt   = configFrame.phraseEdit:GetText() or ""
         for line in string.gmatch(txt, "[^\r\n]+") do
             line = strtrim(line)
             if line ~= "" then
@@ -401,6 +413,7 @@ local function BuildConfigFrame()
     macroEdit:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
     end)
+
     configFrame.macroEdit = macroEdit
 
     ------------------------------------------------
@@ -447,9 +460,8 @@ do
                 return true
             end
 
-            -- If our config is open and the spell box is focused, capture spell links
-            if configFrame
-                and configFrame:IsShown()
+            -- If our config is open and spell box focused, capture spell links
+            if configFrame and configFrame:IsShown()
                 and configFrame.spellEdit
                 and configFrame.spellEdit:HasFocus()
             then
