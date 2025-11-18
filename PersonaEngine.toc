@@ -2,7 +2,7 @@
 ## Title: Persona Engine
 ## Notes: Copporclang's personality core (macro-only chatter)
 ## Author: Tasu Copporbane
-## Version: 1.0
+## Version: 1.0-clean
 ## IconTexture: Interface\AddOns\PersonaEngine\references\persona_brain_icon.tga
 ## SavedVariables: PersonaEngineDB
 ## OptionalDeps: LibDataBroker-1.1, LibDBIcon-1.0
@@ -11,13 +11,12 @@
 PE_Globals.lua
 PE_Core.lua
 
-
+# NPC memory
 PE_NPCMemory.lua
 
 # Visuals / icons
 PE_VFX.lua
 PE_Icon.lua
 
-# config UI
+# Config UI
 PE_ConfigUI.lua
-

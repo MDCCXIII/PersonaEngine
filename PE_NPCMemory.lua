@@ -6,18 +6,20 @@
 local MODULE = "NPCMemory"
 local PE = PE
 
-if not PE then
+if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] PE_NPCMemory.lua loaded without PE core!|r")
     return
 end
 
-if PE.LogLoad then PE.LogLoad(MODULE) end
+if PE.LogLoad then
+    PE.LogLoad(MODULE)
+end
 
 PE.NPCMemory = PE.NPCMemory or {}
-local NPC = PE.NPCMemory
+local NPC     = PE.NPCMemory
 
 local Runtime = PE.Runtime or {}
-PE.Runtime = Runtime
+PE.Runtime    = Runtime
 
 ----------------------------------------------------
 -- SavedVariables schema
@@ -25,32 +27,38 @@ PE.Runtime = Runtime
 -- PersonaEngineDB.npc = {
 --   known = {
 --     ["Jaina Proudmoore"] = {
---       count    = 12,
---       lastSeen = timestamp,
---       lastZone = "Stormwind City",
+--        count    = 12,
+--        lastSeen = timestamp,
+--        lastZone = "Stormwind City",
 --     },
 --   },
 -- }
 
 local function EnsureNPCDB()
-    PersonaEngineDB = PersonaEngineDB or {}
-    PersonaEngineDB.npc = PersonaEngineDB.npc or {}
-    local root = PersonaEngineDB.npc
-    root.known = root.known or {}
+    PersonaEngineDB       = PersonaEngineDB or {}
+    PersonaEngineDB.npc   = PersonaEngineDB.npc or {}
+    local root            = PersonaEngineDB.npc
+    root.known            = root.known or {}
     return root
 end
 
 local function TouchNPC(name)
-    if not name or name == "" then return end
-    local root = EnsureNPCDB()
-    local known = root.known
+    if not name or name == "" then
+        return
+    end
 
+    local root  = EnsureNPCDB()
+    local known = root.known
     local entry = known[name]
     local now   = time()
     local zone  = GetRealZoneText() or ""
 
     if not entry then
-        entry = { count = 0, lastSeen = now, lastZone = zone }
+        entry = {
+            count    = 0,
+            lastSeen = now,
+            lastZone = zone,
+        }
         known[name] = entry
     end
 
@@ -66,8 +74,12 @@ end
 ----------------------------------------------------
 
 local function OnTargetChanged()
-    if not UnitExists("target") then return end
-    if UnitIsPlayer("target") then return end
+    if not UnitExists("target") then
+        return
+    end
+    if UnitIsPlayer("target") then
+        return
+    end
 
     local name = UnitName("target")
     TouchNPC(name)
@@ -122,7 +134,10 @@ end
 -- Module registration
 ----------------------------------------------------
 
-if PE.LogInit then PE.LogInit(MODULE) end
+if PE.LogInit then
+    PE.LogInit(MODULE)
+end
+
 if PE.RegisterModule then
     PE.RegisterModule(MODULE, {
         name  = "NPC Memory",

@@ -1,7 +1,6 @@
 local MODULE = "ConfigUI"
-
--- Root PE table should be defined in PE_Globals.lua
 local PE = PE
+
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
     return
@@ -17,7 +16,10 @@ end
 
 local configFrame
 
+----------------------------------------------------
 -- Safe wrapper for spell lookups
+----------------------------------------------------
+
 local function PE_GetSpellInfoByInput(input)
     if not input or input == "" then
         return
@@ -41,7 +43,7 @@ local function PE_GetSpellInfoByInput(input)
         end
     end
 
-    -- Fallback to old global if it exists
+    -- Fallback to old GetSpellInfo if it exists
     if GetSpellInfo then
         if spellID then
             name, _, icon = GetSpellInfo(spellID)
@@ -56,6 +58,10 @@ local function PE_GetSpellInfoByInput(input)
 
     return nil
 end
+
+----------------------------------------------------
+-- Build Config Frame
+----------------------------------------------------
 
 local function BuildConfigFrame()
     if configFrame then
@@ -73,7 +79,6 @@ local function BuildConfigFrame()
     configFrame:Hide()
 
     local title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    -- Some templates don’t have TitleBg; be defensive
     if configFrame.TitleBg then
         title:SetPoint("LEFT", configFrame.TitleBg, "LEFT", 5, 0)
     else
@@ -85,7 +90,6 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Spell selector
     ------------------------------------------------
-
     local spellLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     spellLabel:SetPoint("TOPLEFT", 16, -40)
     spellLabel:SetText("Spell name or ID:")
@@ -109,7 +113,7 @@ local function BuildConfigFrame()
 
     local function LoadSpellByInput()
         if not PE.GetOrCreateSpellConfig then
-            spellInfoText:SetText("|cffff2020Spell config system not ready (PE_SpellDB.lua).|r")
+            spellInfoText:SetText("|cffff2020Spell config system not ready.|r")
             return
         end
 
@@ -137,9 +141,9 @@ local function BuildConfigFrame()
 
         -- Trigger dropdown
         local triggerModes = PE.TRIGGER_MODES or {
-            ON_CAST = "On Cast",
+            ON_CAST  = "On Cast",
             ON_READY = "When Cooldown Ready",
-            ON_CD   = "When Cooldown Starts",
+            ON_CD    = "When Cooldown Starts",
         }
 
         UIDropDownMenu_SetSelectedValue(configFrame.triggerDrop, cfg.trigger)
@@ -195,7 +199,6 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Trigger dropdown
     ------------------------------------------------
-
     local triggerLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     triggerLabel:SetPoint("TOPLEFT", spellInfoText, "BOTTOMLEFT", 0, -12)
     triggerLabel:SetText("When should Copporclang speak?")
@@ -209,9 +212,9 @@ local function BuildConfigFrame()
 
     UIDropDownMenu_Initialize(triggerDrop, function(self, level)
         local triggerModes = PE.TRIGGER_MODES or {
-            ON_CAST = "On Cast",
+            ON_CAST  = "On Cast",
             ON_READY = "When Cooldown Ready",
-            ON_CD   = "When Cooldown Starts",
+            ON_CD    = "When Cooldown Starts",
         }
 
         local info = UIDropDownMenu_CreateInfo()
@@ -236,7 +239,6 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Chance + enabled
     ------------------------------------------------
-
     local chanceLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanceLabel:SetPoint("TOPLEFT", triggerLabel, "BOTTOMLEFT", 0, -14)
     chanceLabel:SetText("Chance (1 in N):")
@@ -258,13 +260,12 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Channels
     ------------------------------------------------
-
     local chanLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanLabel:SetPoint("TOPLEFT", chanceLabel, "BOTTOMLEFT", 0, -14)
     chanLabel:SetText("Channels:")
 
-    local chans = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
-    local chanChecks = {}
+    local chans       = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
+    local chanChecks  = {}
     local lastInRow
     local row2Anchor
 
@@ -272,23 +273,18 @@ local function BuildConfigFrame()
         local cb = CreateFrame("CheckButton", nil, configFrame, "InterfaceOptionsCheckButtonTemplate")
 
         if i == 1 then
-            -- First checkbox, right of label
             cb:SetPoint("LEFT", chanLabel, "RIGHT", 10, 0)
         elseif i <= 3 then
-            -- First row (SAY, YELL, EMOTE)
             cb:SetPoint("LEFT", lastInRow, "RIGHT", 70, 0)
         elseif i == 4 then
-            -- Second row start (PARTY)
             cb:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 10, -6)
             row2Anchor = cb
         else
-            -- Second row continuation (RAID)
             cb:SetPoint("LEFT", row2Anchor, "RIGHT", 70, 0)
         end
 
         cb.Text:SetText(chan)
         cb:SetChecked(chan == "SAY")
-
         chanChecks[chan] = cb
         lastInRow = cb
     end
@@ -296,11 +292,10 @@ local function BuildConfigFrame()
     configFrame.channelCheckboxes = chanChecks
 
     ------------------------------------------------
-    -- Phrase editor (label + scrollframe)
+    -- Phrase editor
     ------------------------------------------------
-
     local phraseLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36) -- safely under second row
+    phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
     phraseLabel:SetText("Phrases (one per line):")
 
     local scrollFrame = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", configFrame, "UIPanelScrollFrameTemplate")
@@ -314,16 +309,14 @@ local function BuildConfigFrame()
     phraseEdit:SetFontObject(ChatFontNormal)
     phraseEdit:SetWidth(380)
     phraseEdit:SetHeight(200)
-
     scrollFrame:SetScrollChild(phraseEdit)
 
-    configFrame.phraseEdit  = phraseEdit
+    configFrame.phraseEdit   = phraseEdit
     configFrame.phraseScroll = scrollFrame
 
     ------------------------------------------------
     -- Save button
     ------------------------------------------------
-
     local saveButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
     saveButton:SetSize(120, 24)
     saveButton:SetPoint("BOTTOMLEFT", 16, 16)
@@ -356,7 +349,7 @@ local function BuildConfigFrame()
         end
         cfg.chance = n
 
-        -- Enabled (explicit true/false so PE.CanSpeak can see false)
+        -- Enabled (explicit true/false)
         cfg.enabled = configFrame.enabledCheck:GetChecked() and true or false
 
         -- Channels
@@ -390,7 +383,6 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Macro snippet (for bubble macros)
     ------------------------------------------------
-
     local macroLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     macroLabel:SetPoint("BOTTOMLEFT", saveButton, "TOPLEFT", 0, 6)
     macroLabel:SetText("Macro snippet:")
@@ -409,13 +401,11 @@ local function BuildConfigFrame()
     macroEdit:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
     end)
-
     configFrame.macroEdit = macroEdit
 
     ------------------------------------------------
     -- Hint
     ------------------------------------------------
-
     local hint = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hint:SetPoint("BOTTOMRIGHT", -16, 16)
     hint:SetJustifyH("RIGHT")
@@ -426,6 +416,10 @@ local function BuildConfigFrame()
     )
 end
 
+----------------------------------------------------
+-- Public toggle API
+----------------------------------------------------
+
 function PE.ToggleConfig()
     BuildConfigFrame()
     if configFrame:IsShown() then
@@ -435,13 +429,12 @@ function PE.ToggleConfig()
     end
 end
 
--- ##################################################
+----------------------------------------------------
 -- ChatEdit_InsertLink hook (spell link → spell box)
--- ##################################################
+----------------------------------------------------
 
 do
     if ChatEdit_InsertLink then
-        -- Only wrap once; keep original in PE for debugging if needed
         if not PE._OrigChatEdit_InsertLink then
             PE._OrigChatEdit_InsertLink = ChatEdit_InsertLink
         end
@@ -449,7 +442,7 @@ do
         local Orig_ChatEdit_InsertLink = PE._OrigChatEdit_InsertLink
 
         ChatEdit_InsertLink = function(text)
-            -- Let the default handler try first (chat boxes, loot, etc.)
+            -- Let the default handler try first
             if Orig_ChatEdit_InsertLink(text) then
                 return true
             end
@@ -460,7 +453,6 @@ do
                 and configFrame.spellEdit
                 and configFrame.spellEdit:HasFocus()
             then
-                -- For spell links, extract [Spell Name]
                 local name = text:match("%[(.+)%]")
                 if name then
                     configFrame.spellEdit:SetText(name)
@@ -473,10 +465,14 @@ do
         end
     else
         if PE.Log then
-            PE.Log("WARN", "ChatEdit_InsertLink not available; spell link capture disabled.")
+            PE.Log(2, "ChatEdit_InsertLink not available; spell link capture disabled.")
         end
     end
 end
+
+----------------------------------------------------
+-- Module registration
+----------------------------------------------------
 
 if PE.LogInit then
     PE.LogInit(MODULE)
