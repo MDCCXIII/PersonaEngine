@@ -5,8 +5,7 @@
 
 local MODULE = "ConfigUI"
 local PE = PE
-local UI = PE.UI  -- shorthand for widgets
-
+local UI = PE and PE.UI  -- widget collection (UIWindow, UILabeledEdit, etc.)
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -21,61 +20,9 @@ end
 -- Layout constants
 ----------------------------------------------------
 
-local CONFIG_FRAME_WIDTH   = 460
-local CONFIG_FRAME_HEIGHT  = 430
+-- These are mostly for the phrase area; window size is now driven by UI.CreateWindow
 local PHRASE_SCROLL_WIDTH  = 400
 local PHRASE_SCROLL_HEIGHT = 200
-
--- Saved geometry key for config frame
-local CONFIG_GEOMETRY_KEY = "configUI"
-
-----------------------------------------------------
--- Geometry helpers (size/position persistence)
-----------------------------------------------------
-
-local function GetConfigUIStore()
-    PersonaEngineDB = PersonaEngineDB or {}
-    PersonaEngineDB[CONFIG_GEOMETRY_KEY] = PersonaEngineDB[CONFIG_GEOMETRY_KEY] or {}
-    return PersonaEngineDB[CONFIG_GEOMETRY_KEY]
-end
-
-local function SaveConfigFrameGeometry(frame)
-    if not frame or not frame:GetPoint(1) then
-        return
-    end
-
-    local store = GetConfigUIStore()
-
-    local point, _, relPoint, xOfs, yOfs = frame:GetPoint(1)
-    store.point    = point
-    store.relPoint = relPoint
-    store.x        = xOfs
-    store.y        = yOfs
-
-    local w, h = frame:GetSize()
-    store.width  = w
-    store.height = h
-end
-
-local function RestoreConfigFrameGeometry(frame)
-    if not frame then
-        return
-    end
-
-    local store = PersonaEngineDB and PersonaEngineDB[CONFIG_GEOMETRY_KEY]
-    if not store then
-        return
-    end
-
-    if store.width and store.height then
-        frame:SetSize(store.width, store.height)
-    end
-
-    if store.point and store.relPoint and store.x and store.y then
-        frame:ClearAllPoints()
-        frame:SetPoint(store.point, UIParent, store.relPoint, store.x, store.y)
-    end
-end
 
 ----------------------------------------------------
 -- Spell lookup wrapper
@@ -132,110 +79,74 @@ local function BuildConfigFrame()
         return
     end
 
-    configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
-    configFrame:SetSize(CONFIG_FRAME_WIDTH, CONFIG_FRAME_HEIGHT)
-    configFrame:SetPoint("CENTER")
-
-    -- Always on top of most UI
-    configFrame:SetFrameStrata("DIALOG")
-    configFrame:SetFrameLevel(100)
-
-    configFrame:SetMovable(true)
-    configFrame:EnableMouse(true)
-    configFrame:SetResizable(true)
-
-    -- Version-safe min/max bounds (if available)
-    if configFrame.SetResizeBounds then
-        -- minW, minH, maxW, maxH
-        configFrame:SetResizeBounds(360, 260, 1200, 900)
-    end
-
-    configFrame:RegisterForDrag("LeftButton")
-    configFrame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-
-    configFrame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        SaveConfigFrameGeometry(self)
-    end)
-
-    configFrame:SetScript("OnSizeChanged", function(self, width, height)
-        local minW, minH = 360, 260
-
-        -- Clamp to minimums for older clients without SetResizeBounds
-        if width < minW or height < minH then
-            width  = math.max(width,  minW)
-            height = math.max(height, minH)
-            self:SetSize(width, height)
-        end
-
-        SaveConfigFrameGeometry(self)
-    end)
-
-    configFrame:SetScript("OnShow", function(self)
-        -- Restore once per session to avoid fighting user adjustments
-        if not self._geometryRestored then
-            self._geometryRestored = true
-            RestoreConfigFrameGeometry(self)
-        end
-    end)
-
-    configFrame:Hide()
-
-    -- Bottom-right resize handle
-    local resizeButton = CreateFrame("Button", nil, configFrame)
-    resizeButton:SetPoint("BOTTOMRIGHT", -4, 4)
-    resizeButton:SetSize(16, 16)
-
-    resizeButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    resizeButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    resizeButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-
-    resizeButton:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            configFrame:StartSizing("BOTTOMRIGHT")
-            local hl = self:GetHighlightTexture()
-            if hl then
-                hl:Show()
-            end
-        end
-    end)
-
-    resizeButton:SetScript("OnMouseUp", function(self)
-        configFrame:StopMovingOrSizing()
-        local hl = self:GetHighlightTexture()
-        if hl then
-            hl:Hide()
-        end
-        SaveConfigFrameGeometry(configFrame)
-    end)
-
     ------------------------------------------------
-    -- Title
+    -- Main window (via UI widget)
     ------------------------------------------------
 
-    local title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    if configFrame.TitleBg then
-        title:SetPoint("LEFT", configFrame.TitleBg, "LEFT", 5, 0)
+    if UI and UI.CreateWindow then
+        configFrame = UI.CreateWindow({
+            id        = "Config",  -- logical ID for persistence
+            title     = "Persona Engine – Artificer Config",
+            width     = 700,
+            height    = 750,
+            minWidth  = 520,
+            minHeight = 430,
+            strata    = "DIALOG",
+            level     = 100,
+            -- point  = { "CENTER", UIParent, "CENTER", 0, 0 },
+        })
     else
-        title:SetPoint("TOPLEFT", 10, -5)
+        -- Fallback: old-style frame if UI widgets somehow missing
+        configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
+        configFrame:SetSize(700, 750)
+        configFrame:SetPoint("CENTER")
+        configFrame:SetMovable(true)
+        configFrame:EnableMouse(true)
+        configFrame:RegisterForDrag("LeftButton")
+        configFrame:SetScript("OnDragStart", configFrame.StartMoving)
+        configFrame:SetScript("OnDragStop", configFrame.StopMovingOrSizing)
+        configFrame:SetFrameStrata("DIALOG")
+        configFrame:SetFrameLevel(100)
+
+        local title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if configFrame.TitleBg then
+            title:SetPoint("LEFT", configFrame.TitleBg, "LEFT", 5, 0)
+        else
+            title:SetPoint("TOPLEFT", 10, -5)
+        end
+        title:SetText("Persona Engine – Artificer Config")
+        configFrame.title = title
+
+        configFrame:Hide()
     end
-    title:SetText("Persona Engine – Artificer Config")
-    configFrame.title = title
+
+    -- Backwards-compat alias for any external code that still expects this name
+    if not _G["PersonaEngineConfigFrame"] then
+        _G["PersonaEngineConfigFrame"] = configFrame
+    end
 
     ------------------------------------------------
     -- Spell selector
     ------------------------------------------------
 
-    local spellLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spellLabel:SetPoint("TOPLEFT", 16, -40)
-    spellLabel:SetText("Spell name or ID:")
+    local spellLabel, spellEdit
+    if UI and UI.CreateLabeledEdit then
+        spellLabel, spellEdit = UI.CreateLabeledEdit(configFrame, {
+            label = "Spell name or ID:",
+            width = 200,
+            point = { "TOPLEFT", configFrame, "TOPLEFT", 16, -40 },
+        })
+    else
+        spellLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        spellLabel:SetPoint("TOPLEFT", 16, -40)
+        spellLabel:SetText("Spell name or ID:")
 
-    local spellEdit = CreateFrame("EditBox", nil, configFrame, "InputBoxTemplate")
-    spellEdit:SetSize(200, 20)
-    spellEdit:SetPoint("LEFT", spellLabel, "RIGHT", 10, 0)
-    spellEdit:SetAutoFocus(false)
+        spellEdit = CreateFrame("EditBox", nil, configFrame, "InputBoxTemplate")
+        spellEdit:SetSize(200, 20)
+        spellEdit:SetPoint("LEFT", spellLabel, "RIGHT", 10, 0)
+        spellEdit:SetAutoFocus(false)
+    end
+
     configFrame.spellEdit = spellEdit
 
     local spellIcon = configFrame:CreateTexture(nil, "OVERLAY")
@@ -328,11 +239,21 @@ local function BuildConfigFrame()
         end
     end
 
-    local loadButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
-    loadButton:SetSize(70, 22)
-    loadButton:SetPoint("LEFT", spellInfoText, "RIGHT", -70, 0)
-    loadButton:SetText("Load")
-    loadButton:SetScript("OnClick", LoadSpellByInput)
+    local loadButton
+    if UI and UI.CreateButton then
+        loadButton = UI.CreateButton(configFrame, {
+            text  = "Load",
+            size  = { 70, 22 },
+            point = { "LEFT", spellInfoText, "RIGHT", -70, 0 },
+            onClick = LoadSpellByInput,
+        })
+    else
+        loadButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
+        loadButton:SetSize(70, 22)
+        loadButton:SetPoint("LEFT", spellInfoText, "RIGHT", -70, 0)
+        loadButton:SetText("Load")
+        loadButton:SetScript("OnClick", LoadSpellByInput)
+    end
 
     ------------------------------------------------
     -- Trigger dropdown
@@ -391,10 +312,19 @@ local function BuildConfigFrame()
     chanceEdit:SetNumber(5)
     configFrame.chanceEdit = chanceEdit
 
-    local enabledCheck = CreateFrame("CheckButton", nil, configFrame, "InterfaceOptionsCheckButtonTemplate")
-    enabledCheck:SetPoint("LEFT", chanceEdit, "RIGHT", 20, 0)
-    enabledCheck.Text:SetText("Enabled")
-    enabledCheck:SetChecked(true)
+    local enabledCheck
+    if UI and UI.CreateCheckbox then
+        enabledCheck = UI.CreateCheckbox(configFrame, {
+            label   = "Enabled",
+            point   = { "LEFT", chanceEdit, "RIGHT", 20, 0 },
+            checked = true,
+        })
+    else
+        enabledCheck = CreateFrame("CheckButton", nil, configFrame, "InterfaceOptionsCheckButtonTemplate")
+        enabledCheck:SetPoint("LEFT", chanceEdit, "RIGHT", 20, 0)
+        enabledCheck.Text:SetText("Enabled")
+        enabledCheck:SetChecked(true)
+    end
     configFrame.enabledCheck = enabledCheck
 
     ------------------------------------------------
@@ -411,7 +341,17 @@ local function BuildConfigFrame()
     local row2Anchor
 
     for i, chan in ipairs(chans) do
-        local cb = CreateFrame("CheckButton", nil, configFrame, "InterfaceOptionsCheckButtonTemplate")
+        local cb
+        if UI and UI.CreateCheckbox then
+            -- We still do custom layout, but use the widget constructor
+            cb = UI.CreateCheckbox(configFrame, {
+                label = chan,
+                -- point filled in below
+            })
+        else
+            cb = CreateFrame("CheckButton", nil, configFrame, "InterfaceOptionsCheckButtonTemplate")
+            cb.Text:SetText(chan)
+        end
 
         if i == 1 then
             cb:SetPoint("LEFT", chanLabel, "RIGHT", 10, 0)
@@ -424,7 +364,6 @@ local function BuildConfigFrame()
             cb:SetPoint("LEFT", row2Anchor, "RIGHT", 70, 0)
         end
 
-        cb.Text:SetText(chan)
         cb:SetChecked(chan == "SAY")
 
         chanChecks[chan] = cb
@@ -441,19 +380,27 @@ local function BuildConfigFrame()
     phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
     phraseLabel:SetText("Phrases (one per line):")
 
-    local scrollFrame = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", configFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:ClearAllPoints()
-    scrollFrame:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", 0, -4)
-    scrollFrame:SetSize(PHRASE_SCROLL_WIDTH, PHRASE_SCROLL_HEIGHT)
+    local scrollFrame, phraseEdit
+    if UI and UI.CreateMultilineEdit then
+        scrollFrame, phraseEdit = UI.CreateMultilineEdit(configFrame, {
+            size  = { PHRASE_SCROLL_WIDTH, PHRASE_SCROLL_HEIGHT },
+            point = { "TOPLEFT", phraseLabel, "BOTTOMLEFT", 0, -4 },
+        })
+    else
+        scrollFrame = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", configFrame, "UIPanelScrollFrameTemplate")
+        scrollFrame:ClearAllPoints()
+        scrollFrame:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", 0, -4)
+        scrollFrame:SetSize(PHRASE_SCROLL_WIDTH, PHRASE_SCROLL_HEIGHT)
 
-    local phraseEdit = CreateFrame("EditBox", nil, scrollFrame)
-    phraseEdit:SetMultiLine(true)
-    phraseEdit:SetAutoFocus(false)
-    phraseEdit:SetFontObject(ChatFontNormal)
-    phraseEdit:SetWidth(PHRASE_SCROLL_WIDTH - 20)
-    phraseEdit:SetHeight(PHRASE_SCROLL_HEIGHT)
+        phraseEdit = CreateFrame("EditBox", nil, scrollFrame)
+        phraseEdit:SetMultiLine(true)
+        phraseEdit:SetAutoFocus(false)
+        phraseEdit:SetFontObject(ChatFontNormal)
+        phraseEdit:SetWidth(PHRASE_SCROLL_WIDTH - 20)
+        phraseEdit:SetHeight(PHRASE_SCROLL_HEIGHT)
 
-    scrollFrame:SetScrollChild(phraseEdit)
+        scrollFrame:SetScrollChild(phraseEdit)
+    end
 
     configFrame.phraseEdit   = phraseEdit
     configFrame.phraseScroll = scrollFrame
@@ -462,13 +409,7 @@ local function BuildConfigFrame()
     -- Save button
     ------------------------------------------------
 
-    local saveButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
-    saveButton:SetSize(120, 24)
-    saveButton:SetPoint("BOTTOMLEFT", 16, 16)
-    saveButton:SetText("Save Config")
-    configFrame.saveButton = saveButton
-
-    saveButton:SetScript("OnClick", function()
+    local function SaveCurrentConfig()
         if not currentSpellID then
             spellInfoText:SetText("|cffff2020Pick a valid spell first.|r")
             return
@@ -524,7 +465,25 @@ local function BuildConfigFrame()
 
         -- Visual confirmation
         spellInfoText:SetText((spellInfoText:GetText() or "") .. " |cff20ff20Saved.|r")
-    end)
+    end
+
+    local saveButton
+    if UI and UI.CreateButton then
+        saveButton = UI.CreateButton(configFrame, {
+            text  = "Save Config",
+            size  = { 120, 24 },
+            point = { "BOTTOMLEFT", configFrame, "BOTTOMLEFT", 16, 16 },
+            onClick = SaveCurrentConfig,
+        })
+    else
+        saveButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
+        saveButton:SetSize(120, 24)
+        saveButton:SetPoint("BOTTOMLEFT", 16, 16)
+        saveButton:SetText("Save Config")
+        saveButton:SetScript("OnClick", SaveCurrentConfig)
+    end
+
+    configFrame.saveButton = saveButton
 
     ------------------------------------------------
     -- Macro snippet (for bubble macros)
