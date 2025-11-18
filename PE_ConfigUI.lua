@@ -19,8 +19,8 @@ end
 -- Layout constants
 ----------------------------------------------------
 
-local CONFIG_FRAME_WIDTH   = 460
-local CONFIG_FRAME_HEIGHT  = 430
+local CONFIG_FRAME_WIDTH   = 700
+local CONFIG_FRAME_HEIGHT  = 750
 local PHRASE_SCROLL_WIDTH  = 400
 local PHRASE_SCROLL_HEIGHT = 200
 
