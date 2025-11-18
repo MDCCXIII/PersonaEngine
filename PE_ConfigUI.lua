@@ -4,7 +4,7 @@
 -- ##################################################
 
 local MODULE = "ConfigUI"
-local PE     = PE
+local PE = PE
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -19,15 +19,18 @@ end
 -- Layout constants
 ----------------------------------------------------
 
-local CONFIG_FRAME_WIDTH   = 700
-local CONFIG_FRAME_HEIGHT  = 750
+local CONFIG_FRAME_WIDTH   = 460
+local CONFIG_FRAME_HEIGHT  = 430
 local PHRASE_SCROLL_WIDTH  = 400
 local PHRASE_SCROLL_HEIGHT = 200
 
--- Saved geometry key
+-- Saved geometry key for config frame
 local CONFIG_GEOMETRY_KEY = "configUI"
 
--- Helpers for saving/restoring frame geometry
+----------------------------------------------------
+-- Geometry helpers (size/position persistence)
+----------------------------------------------------
+
 local function GetConfigUIStore()
     PersonaEngineDB = PersonaEngineDB or {}
     PersonaEngineDB[CONFIG_GEOMETRY_KEY] = PersonaEngineDB[CONFIG_GEOMETRY_KEY] or {}
@@ -35,7 +38,10 @@ local function GetConfigUIStore()
 end
 
 local function SaveConfigFrameGeometry(frame)
-    if not frame or not frame:GetPoint(1) then return end
+    if not frame or not frame:GetPoint(1) then
+        return
+    end
+
     local store = GetConfigUIStore()
 
     local point, _, relPoint, xOfs, yOfs = frame:GetPoint(1)
@@ -50,9 +56,14 @@ local function SaveConfigFrameGeometry(frame)
 end
 
 local function RestoreConfigFrameGeometry(frame)
-    if not frame then return end
+    if not frame then
+        return
+    end
+
     local store = PersonaEngineDB and PersonaEngineDB[CONFIG_GEOMETRY_KEY]
-    if not store then return end
+    if not store then
+        return
+    end
 
     if store.width and store.height then
         frame:SetSize(store.width, store.height)
@@ -120,65 +131,87 @@ local function BuildConfigFrame()
     end
 
     configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
-	configFrame:SetSize(CONFIG_FRAME_WIDTH, CONFIG_FRAME_HEIGHT)
-	configFrame:SetPoint("CENTER")
+    configFrame:SetSize(CONFIG_FRAME_WIDTH, CONFIG_FRAME_HEIGHT)
+    configFrame:SetPoint("CENTER")
 
-	-- Always on top of most UI stuff
-	configFrame:SetFrameStrata("DIALOG")
-	configFrame:SetFrameLevel(100)
+    -- Always on top of most UI
+    configFrame:SetFrameStrata("DIALOG")
+    configFrame:SetFrameLevel(100)
 
-	configFrame:SetMovable(true)
-	configFrame:EnableMouse(true)
-	configFrame:SetResizable(true)
-	configFrame:SetMinResize(360, 260)  -- sane minimum so things don't implode
+    configFrame:SetMovable(true)
+    configFrame:EnableMouse(true)
+    configFrame:SetResizable(true)
 
-	configFrame:RegisterForDrag("LeftButton")
-	configFrame:SetScript("OnDragStart", function(self)
-		self:StartMoving()
-	end)
-	configFrame:SetScript("OnDragStop", function(self)
-		self:StopMovingOrSizing()
-		SaveConfigFrameGeometry(self)
-	end)
+    -- Version-safe min/max bounds (if available)
+    if configFrame.SetResizeBounds then
+        -- minW, minH, maxW, maxH
+        configFrame:SetResizeBounds(360, 260, 1200, 900)
+    end
 
-	-- Persist size
-	configFrame:SetScript("OnSizeChanged", function(self, width, height)
-		SaveConfigFrameGeometry(self)
-	end)
+    configFrame:RegisterForDrag("LeftButton")
+    configFrame:SetScript("OnDragStart", function(self)
+        self:StartMoving()
+    end)
 
-	-- Restore geometry when first shown
-	configFrame:SetScript("OnShow", function(self)
-		-- Only restore once per session to avoid fighting user adjustments
-		if not self._geometryRestored then
-			self._geometryRestored = true
-			RestoreConfigFrameGeometry(self)
-		end
-	end)
+    configFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        SaveConfigFrameGeometry(self)
+    end)
 
-	configFrame:Hide()
+    configFrame:SetScript("OnSizeChanged", function(self, width, height)
+        local minW, minH = 360, 260
 
-	-- Bottom-right resize handle
-	local resizeButton = CreateFrame("Button", nil, configFrame)
-	resizeButton:SetPoint("BOTTOMRIGHT", -4, 4)
-	resizeButton:SetSize(16, 16)
+        -- Clamp to minimums for older clients without SetResizeBounds
+        if width < minW or height < minH then
+            width  = math.max(width,  minW)
+            height = math.max(height, minH)
+            self:SetSize(width, height)
+        end
 
-	resizeButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-	resizeButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-	resizeButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+        SaveConfigFrameGeometry(self)
+    end)
 
-	resizeButton:SetScript("OnMouseDown", function(self, button)
-		if button == "LeftButton" then
-			configFrame:StartSizing("BOTTOMRIGHT")
-			self:GetHighlightTexture():Show()
-		end
-	end)
+    configFrame:SetScript("OnShow", function(self)
+        -- Restore once per session to avoid fighting user adjustments
+        if not self._geometryRestored then
+            self._geometryRestored = true
+            RestoreConfigFrameGeometry(self)
+        end
+    end)
 
-	resizeButton:SetScript("OnMouseUp", function(self, button)
-		configFrame:StopMovingOrSizing()
-		self:GetHighlightTexture():Hide()
-		SaveConfigFrameGeometry(configFrame)
-	end)
+    configFrame:Hide()
 
+    -- Bottom-right resize handle
+    local resizeButton = CreateFrame("Button", nil, configFrame)
+    resizeButton:SetPoint("BOTTOMRIGHT", -4, 4)
+    resizeButton:SetSize(16, 16)
+
+    resizeButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    resizeButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    resizeButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+
+    resizeButton:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            configFrame:StartSizing("BOTTOMRIGHT")
+            local hl = self:GetHighlightTexture()
+            if hl then
+                hl:Show()
+            end
+        end
+    end)
+
+    resizeButton:SetScript("OnMouseUp", function(self)
+        configFrame:StopMovingOrSizing()
+        local hl = self:GetHighlightTexture()
+        if hl then
+            hl:Hide()
+        end
+        SaveConfigFrameGeometry(configFrame)
+    end)
+
+    ------------------------------------------------
+    -- Title
+    ------------------------------------------------
 
     local title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     if configFrame.TitleBg then
@@ -192,6 +225,7 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Spell selector
     ------------------------------------------------
+
     local spellLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     spellLabel:SetPoint("TOPLEFT", 16, -40)
     spellLabel:SetText("Spell name or ID:")
@@ -259,11 +293,11 @@ local function BuildConfigFrame()
 
         -- Channels
         local chanCfg = cfg.channels or {}
-        configFrame.channelCheckboxes.SAY:SetChecked(  chanCfg.SAY   )
-        configFrame.channelCheckboxes.YELL:SetChecked( chanCfg.YELL  )
-        configFrame.channelCheckboxes.EMOTE:SetChecked(chanCfg.EMOTE )
-        configFrame.channelCheckboxes.PARTY:SetChecked(chanCfg.PARTY )
-        configFrame.channelCheckboxes.RAID:SetChecked( chanCfg.RAID  )
+        configFrame.channelCheckboxes.SAY:SetChecked(   chanCfg.SAY   )
+        configFrame.channelCheckboxes.YELL:SetChecked(  chanCfg.YELL  )
+        configFrame.channelCheckboxes.EMOTE:SetChecked( chanCfg.EMOTE )
+        configFrame.channelCheckboxes.PARTY:SetChecked( chanCfg.PARTY )
+        configFrame.channelCheckboxes.RAID:SetChecked(  chanCfg.RAID  )
 
         -- Enabled
         configFrame.enabledCheck:SetChecked(cfg.enabled ~= false)
@@ -301,6 +335,7 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Trigger dropdown
     ------------------------------------------------
+
     local triggerLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     triggerLabel:SetPoint("TOPLEFT", spellInfoText, "BOTTOMLEFT", 0, -12)
     triggerLabel:SetText("When should Copporclang speak?")
@@ -320,7 +355,6 @@ local function BuildConfigFrame()
         }
 
         local info = UIDropDownMenu_CreateInfo()
-
         for key, label in pairs(triggerModes) do
             info.text    = label
             info.value   = key
@@ -342,6 +376,7 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Chance + enabled
     ------------------------------------------------
+
     local chanceLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanceLabel:SetPoint("TOPLEFT", triggerLabel, "BOTTOMLEFT", 0, -14)
     chanceLabel:SetText("Chance (1 in N):")
@@ -363,11 +398,12 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Channels
     ------------------------------------------------
+
     local chanLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chanLabel:SetPoint("TOPLEFT", chanceLabel, "BOTTOMLEFT", 0, -14)
     chanLabel:SetText("Channels:")
 
-    local chans      = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
+    local chans = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
     local chanChecks = {}
     local lastInRow
     local row2Anchor
@@ -388,8 +424,9 @@ local function BuildConfigFrame()
 
         cb.Text:SetText(chan)
         cb:SetChecked(chan == "SAY")
+
         chanChecks[chan] = cb
-        lastInRow        = cb
+        lastInRow = cb
     end
 
     configFrame.channelCheckboxes = chanChecks
@@ -397,6 +434,7 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Phrase editor
     ------------------------------------------------
+
     local phraseLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
     phraseLabel:SetText("Phrases (one per line):")
@@ -412,14 +450,16 @@ local function BuildConfigFrame()
     phraseEdit:SetFontObject(ChatFontNormal)
     phraseEdit:SetWidth(PHRASE_SCROLL_WIDTH - 20)
     phraseEdit:SetHeight(PHRASE_SCROLL_HEIGHT)
+
     scrollFrame:SetScrollChild(phraseEdit)
 
-    configFrame.phraseEdit  = phraseEdit
+    configFrame.phraseEdit   = phraseEdit
     configFrame.phraseScroll = scrollFrame
 
     ------------------------------------------------
     -- Save button
     ------------------------------------------------
+
     local saveButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
     saveButton:SetSize(120, 24)
     saveButton:SetPoint("BOTTOMLEFT", 16, 16)
@@ -431,6 +471,7 @@ local function BuildConfigFrame()
             spellInfoText:SetText("|cffff2020Pick a valid spell first.|r")
             return
         end
+
         if not PE.GetOrCreateSpellConfig then
             spellInfoText:SetText("|cffff2020Spell config system not ready.|r")
             return
@@ -468,7 +509,7 @@ local function BuildConfigFrame()
 
         -- Phrases
         cfg.phrases = {}
-        local txt   = configFrame.phraseEdit:GetText() or ""
+        local txt = configFrame.phraseEdit:GetText() or ""
         for line in string.gmatch(txt, "[^\r\n]+") do
             line = strtrim(line)
             if line ~= "" then
@@ -486,6 +527,7 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Macro snippet (for bubble macros)
     ------------------------------------------------
+
     local macroLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     macroLabel:SetPoint("BOTTOMLEFT", saveButton, "TOPLEFT", 0, 6)
     macroLabel:SetText("Macro snippet:")
@@ -498,9 +540,11 @@ local function BuildConfigFrame()
     macroEdit:SetPoint("LEFT", macroLabel, "RIGHT", 10, 0)
     macroEdit:SetJustifyH("LEFT")
     macroEdit:SetJustifyV("TOP")
+
     macroEdit:SetScript("OnEditFocusGained", function(self)
         self:HighlightText(0, #self:GetText())
     end)
+
     macroEdit:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
     end)
@@ -510,6 +554,7 @@ local function BuildConfigFrame()
     ------------------------------------------------
     -- Hint
     ------------------------------------------------
+
     local hint = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hint:SetPoint("BOTTOMRIGHT", -16, 16)
     hint:SetJustifyH("RIGHT")
