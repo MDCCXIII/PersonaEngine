@@ -24,6 +24,46 @@ local CONFIG_FRAME_HEIGHT  = 750
 local PHRASE_SCROLL_WIDTH  = 400
 local PHRASE_SCROLL_HEIGHT = 200
 
+-- Saved geometry key
+local CONFIG_GEOMETRY_KEY = "configUI"
+
+-- Helpers for saving/restoring frame geometry
+local function GetConfigUIStore()
+    PersonaEngineDB = PersonaEngineDB or {}
+    PersonaEngineDB[CONFIG_GEOMETRY_KEY] = PersonaEngineDB[CONFIG_GEOMETRY_KEY] or {}
+    return PersonaEngineDB[CONFIG_GEOMETRY_KEY]
+end
+
+local function SaveConfigFrameGeometry(frame)
+    if not frame or not frame:GetPoint(1) then return end
+    local store = GetConfigUIStore()
+
+    local point, _, relPoint, xOfs, yOfs = frame:GetPoint(1)
+    store.point    = point
+    store.relPoint = relPoint
+    store.x        = xOfs
+    store.y        = yOfs
+
+    local w, h = frame:GetSize()
+    store.width  = w
+    store.height = h
+end
+
+local function RestoreConfigFrameGeometry(frame)
+    if not frame then return end
+    local store = PersonaEngineDB and PersonaEngineDB[CONFIG_GEOMETRY_KEY]
+    if not store then return end
+
+    if store.width and store.height then
+        frame:SetSize(store.width, store.height)
+    end
+
+    if store.point and store.relPoint and store.x and store.y then
+        frame:ClearAllPoints()
+        frame:SetPoint(store.point, UIParent, store.relPoint, store.x, store.y)
+    end
+end
+
 ----------------------------------------------------
 -- Spell lookup wrapper
 ----------------------------------------------------
@@ -80,14 +120,65 @@ local function BuildConfigFrame()
     end
 
     configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
-    configFrame:SetSize(CONFIG_FRAME_WIDTH, CONFIG_FRAME_HEIGHT)
-    configFrame:SetPoint("CENTER")
-    configFrame:SetMovable(true)
-    configFrame:EnableMouse(true)
-    configFrame:RegisterForDrag("LeftButton")
-    configFrame:SetScript("OnDragStart", configFrame.StartMoving)
-    configFrame:SetScript("OnDragStop",  configFrame.StopMovingOrSizing)
-    configFrame:Hide()
+	configFrame:SetSize(CONFIG_FRAME_WIDTH, CONFIG_FRAME_HEIGHT)
+	configFrame:SetPoint("CENTER")
+
+	-- Always on top of most UI stuff
+	configFrame:SetFrameStrata("DIALOG")
+	configFrame:SetFrameLevel(100)
+
+	configFrame:SetMovable(true)
+	configFrame:EnableMouse(true)
+	configFrame:SetResizable(true)
+	configFrame:SetMinResize(360, 260)  -- sane minimum so things don't implode
+
+	configFrame:RegisterForDrag("LeftButton")
+	configFrame:SetScript("OnDragStart", function(self)
+		self:StartMoving()
+	end)
+	configFrame:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		SaveConfigFrameGeometry(self)
+	end)
+
+	-- Persist size
+	configFrame:SetScript("OnSizeChanged", function(self, width, height)
+		SaveConfigFrameGeometry(self)
+	end)
+
+	-- Restore geometry when first shown
+	configFrame:SetScript("OnShow", function(self)
+		-- Only restore once per session to avoid fighting user adjustments
+		if not self._geometryRestored then
+			self._geometryRestored = true
+			RestoreConfigFrameGeometry(self)
+		end
+	end)
+
+	configFrame:Hide()
+
+	-- Bottom-right resize handle
+	local resizeButton = CreateFrame("Button", nil, configFrame)
+	resizeButton:SetPoint("BOTTOMRIGHT", -4, 4)
+	resizeButton:SetSize(16, 16)
+
+	resizeButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+	resizeButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+	resizeButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+
+	resizeButton:SetScript("OnMouseDown", function(self, button)
+		if button == "LeftButton" then
+			configFrame:StartSizing("BOTTOMRIGHT")
+			self:GetHighlightTexture():Show()
+		end
+	end)
+
+	resizeButton:SetScript("OnMouseUp", function(self, button)
+		configFrame:StopMovingOrSizing()
+		self:GetHighlightTexture():Hide()
+		SaveConfigFrameGeometry(configFrame)
+	end)
+
 
     local title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     if configFrame.TitleBg then
