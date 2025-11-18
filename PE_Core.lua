@@ -14,8 +14,8 @@ PE.LogLoad(MODULE)
 -- Prevents addon-driven messages from tripping WoW's
 -- chat throttle.
 
-local RATE_WINDOW    = 8   -- seconds in a sliding window
-local RATE_MAX_MSGS  = 5   -- max messages allowed in that window
+local RATE_WINDOW   = 8   -- seconds in a sliding window
+local RATE_MAX_MSGS = 5   -- max messages allowed in that window
 
 local function PE_CanSendMessage()
     local now = GetTime()
@@ -57,7 +57,7 @@ function PE.CanSpeak(cfg)
 end
 
 ----------------------------------------------------
--- Macro State Helper (for FireBubble context)
+-- Macro State Helper (for speech context)
 ----------------------------------------------------
 -- Very simple: just "combat" vs "idle" for now.
 -- This never drives automatic speech, only informs
@@ -69,7 +69,6 @@ local function PE_GetMacroState()
     end
     return "idle"
 end
-
 PE.GetMacroState = PE_GetMacroState
 
 ----------------------------------------------------
@@ -111,12 +110,11 @@ local function PE_ResolveChannel(channel)
         return channel
     end
 
-    -- Solo fallback: previously we tried to shield
-    -- automated combat SAY/YELL here. With macro-only
-    -- usage this is less critical, but we keep the
+    -- Solo fallback:
+    -- With macro-only usage this is less critical, but we keep the
     -- EMOTE safety for non-bubble SR() calls.
-    local inGroup   = IsInGroup() or IsInRaid()
-    local inCombat  = UnitAffectingCombat("player")
+    local inGroup  = IsInGroup() or IsInRaid()
+    local inCombat = UnitAffectingCombat("player")
 
     if not inGroup and inCombat and (channel == "SAY" or channel == "YELL") then
         return "EMOTE"
@@ -131,9 +129,7 @@ end
 ----------------------------------------------------
 
 local function PE_SelectLine(pool)
-    if not pool or #pool == 0 then
-        return nil
-    end
+    if not pool or #pool == 0 then return nil end
 
     local line = pool[math.random(#pool)]
 
@@ -146,27 +142,22 @@ local function PE_SelectLine(pool)
     return line
 end
 
+-- Expose in case other modules want it
+PE.SelectLine = PE.SelectLine or PE_SelectLine
+
 ----------------------------------------------------
 -- Persona Engine - Unified Send Helper
 ----------------------------------------------------
 -- opts:
---   opts.cfg           - optional spell config (for .enabled)
---   opts.bypassResolve - true = don't remap channel (used by FireBubble)
---   opts.eventId       - optional abstract event id for inflection context
---   opts.ctx           - optional context table for inflection
+--   opts.cfg          - optional spell config (for .enabled)
+--   opts.bypassResolve- true = don't remap channel (used by FireBubble)
+--   opts.eventId      - optional abstract event id for inflection context
+--   opts.ctx          - optional context table for inflection
 
 local function PE_SendPersonaMessage(text, channel, opts)
-    if not text or text == "" then
-        return
-    end
-
-    if not PE.CanSpeak(opts and opts.cfg) then
-        return
-    end
-
-    if not PE_CanSendMessage() then
-        return
-    end
+    if not text or text == "" then return end
+    if not PE.CanSpeak(opts and opts.cfg) then return end
+    if not PE_CanSendMessage() then return end
 
     local outChan = channel or "SAY"
     if not (opts and opts.bypassResolve) then
@@ -197,76 +188,7 @@ end
 PE.SendPersonaMessage = PE_SendPersonaMessage
 
 ----------------------------------------------------
--- Persona Engine — Core SR Logic
-----------------------------------------------------
-
-function SR(a)
-    if not a then return end
-
-    local chan   = a.channel or "SAY"
-    local chance = a.chance or 10
-    local pool   = a.phr
-
-    if not PE.CanSpeak() then
-        return
-    end
-
-    if not pool or #pool == 0 then
-        return
-    end
-
-    if math.random(chance) ~= 1 then
-        return
-    end
-
-    local line = PE.SelectLine and PE.SelectLine(pool) or PE_SelectLine(pool)
-    if not line then
-        return
-    end
-
-    PE_SendPersonaMessage(line, chan, {
-        eventId = a.eventId or "SR_MACRO",
-        ctx     = a.ctx,
-    })
-end
-
-----------------------------------------------------
--- Phrase Builder / Combo Engine
-----------------------------------------------------
-
-function SetP(i, t)
-    if type(t) == "table" then
-        P[i] = t[math.random(#t)]
-    else
-        P[i] = t
-    end
-end
-
-function SpeakP(c, h, n)
-    if not PE.CanSpeak() then
-        return
-    end
-
-    c = c or 10
-    if math.random(c) ~= 1 then
-        return
-    end
-
-    h = h or "SAY"
-    n = n or 2
-
-    local s = ""
-    for i = 1, n do
-        s = s .. (P[i] or "")
-    end
-
-    if s ~= "" then
-        PE_SendPersonaMessage(s, h, { eventId = "SPEAKP" })
-    end
-end
-
-----------------------------------------------------
--- Delayed send helper (for reaction-style FireBubble lines)
+-- Delayed send helper (for reaction-style lines)
 ----------------------------------------------------
 
 local function PE_SchedulePersonaMessage(text, channel, opts, delay)
@@ -292,45 +214,113 @@ local function PE_SchedulePersonaMessage(text, channel, opts, delay)
 end
 
 ----------------------------------------------------
--- Persona Engine - Bubble Macro Helper
+-- Internal helpers for unified Speak() API
 ----------------------------------------------------
--- Usage:
---   #showtooltip Freezing Trap
---   /run PE.FireBubble(187650)
---   /cast Freezing Trap
---
--- Optional 2nd arg:
---   isReactionOverride = true  → always delayed “reaction”
---   isReactionOverride = false → always immediate “action”
---   nil → use cfg.reactionChance (if present)
 
-function PE.FireBubble(spellID, isReactionOverride)
+-- 1) SR-style phrase pool (legacy, but routed through a helper)
+
+local function PE_SpeakPool(spec)
+    if not spec then return end
+
+    local chan   = spec.channel or "SAY"
+    local chance = spec.chance or 10
+    local pool   = spec.phr
+    local ctx    = spec.ctx
+    local event  = spec.eventId or "SR_MACRO"
+
+    if not PE.CanSpeak() then return end
+    if not pool or #pool == 0 then return end
+    if math.random(chance) ~= 1 then return end
+
+    local line = PE.SelectLine and PE.SelectLine(pool) or PE_SelectLine(pool)
+    if not line then return end
+
+    PE_SendPersonaMessage(line, chan, {
+        eventId = event,
+        ctx     = ctx,
+    })
+end
+
+-- 2) phraseKey-based speech using the new static+dynamic engine
+
+local function PE_SpeakPhraseKey(phraseKey, spec)
+    if not phraseKey then return end
+    if not PE.Phrases or not PE.Phrases.PickLine then
+        return
+    end
+
+    spec = spec or {}
+
+    local chance  = spec.chance or 10
+    if chance < 1 then chance = 1 end
+    if math.random(chance) ~= 1 then return end
+
+    local channel = spec.channel or "SAY"
+    local cfg     = spec.cfg
+    local ctx     = spec.ctx or {}
+    local stateId = spec.stateId or (PE_GetMacroState and PE_GetMacroState() or "idle")
+    ctx.stateId   = ctx.stateId or stateId
+
+    local eventId = spec.eventId or ("PHRASE_" .. tostring(phraseKey))
+
+    local line = PE.Phrases.PickLine(phraseKey, ctx, stateId, eventId)
+    if not line or line == "" then return end
+
+    PE_SendPersonaMessage(line, channel, {
+        cfg          = cfg,
+        eventId      = eventId,
+        ctx          = ctx,
+        bypassResolve= spec.bypassResolve, -- optional override
+    })
+end
+
+-- 3) literal text (direct string) speech
+
+local function PE_SpeakLiteral(text, spec)
+    if not text or text == "" then return end
+
+    spec = spec or {}
+
+    local chance  = spec.chance or 10
+    if chance < 1 then chance = 1 end
+    if math.random(chance) ~= 1 then return end
+
+    local channel = spec.channel or "SAY"
+
+    PE_SendPersonaMessage(text, channel, {
+        cfg          = spec.cfg,
+        eventId      = spec.eventId or "LITERAL",
+        ctx          = spec.ctx,
+        bypassResolve= spec.bypassResolve,
+    })
+end
+
+-- 4) Spell bubble helper extracted so both FireBubble and Speak() can share it.
+
+local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
     if not spellID then return end
     if not PersonaEngineDB or not PersonaEngineDB.spells then return end
 
-    local cfg = PersonaEngineDB.spells[spellID]
+    local cfg = explicitCfg or PersonaEngineDB.spells[spellID]
     if not cfg then return end
 
     -- Global + per-spell enable flags
-    if not PE.CanSpeak(cfg) then
-        return
-    end
+    if not PE.CanSpeak(cfg) then return end
 
     -- Chance check
     local chance = cfg.chance or 10
-    if chance < 1 then
-        chance = 1
-    end
-    if math.random(chance) ~= 1 then
-        return
-    end
+    if chance < 1 then chance = 1 end
+    if math.random(chance) ~= 1 then return end
 
     -- Choose channel (prioritize SAY, then YELL, then EMOTE, then first flag)
     local channel = "SAY"
     if cfg.channels and next(cfg.channels) then
-        if     cfg.channels.SAY   then channel = "SAY"
-        elseif cfg.channels.YELL  then channel = "YELL"
-        elseif cfg.channels.EMOTE then channel = "EMOTE"
+        if cfg.channels.SAY then
+            channel = "SAY"
+        elseif cfg.channels.YELL then
+            channel = "YELL"
+        elseif cfg.channels.EMOTE then
+            channel = "EMOTE"
         else
             for ch, on in pairs(cfg.channels) do
                 if on then
@@ -368,9 +358,7 @@ function PE.FireBubble(spellID, isReactionOverride)
         line = PE_SelectLine(phrases)
     end
 
-    if not line or line == "" then
-        return
-    end
+    if not line or line == "" then return end
 
     ------------------------------------------------
     -- Action vs reaction (optional delay)
@@ -383,10 +371,8 @@ function PE.FireBubble(spellID, isReactionOverride)
         local maxD = cfg.reactionDelayMax or 2.5
         if maxD < minD then maxD = minD end
         delay = minD + math.random() * (maxD - minD)
-
     elseif isReactionOverride == false then
         delay = 0
-
     else
         -- No override → probabilistic reaction
         local rc = cfg.reactionChance or 0
@@ -403,17 +389,143 @@ function PE.FireBubble(spellID, isReactionOverride)
         line,
         channel,
         {
-            cfg           = cfg,
-            bypassResolve = true,
-            eventId       = eventId,
-            ctx           = ctx,
+            cfg          = cfg,
+            bypassResolve= true,
+            eventId      = eventId,
+            ctx          = ctx,
         },
         delay
     )
 end
 
 ----------------------------------------------------
--- Persona Engine - Macro usage
+-- Public Spell Bubble API (legacy name)
+----------------------------------------------------
+
+function PE.FireBubble(spellID, isReactionOverride)
+    return PE_SpeakSpellBubble(spellID, isReactionOverride, nil)
+end
+
+----------------------------------------------------
+-- Unified Macro API: PE.Speak(...)
+----------------------------------------------------
+-- Usage patterns:
+--   1) Spell bubble:
+--        /run PE.Speak(187650)
+--        /run PE.Speak(187650, true) -- force reaction
+--
+--   2) phraseKey:
+--        /run PE.Speak("ENTERING_COMBAT")
+--        /run PE.Speak("ENTERING_COMBAT", { channel="SAY", chance=5 })
+--
+--   3) literal text:
+--        /run PE.Speak("Behold my questionable engineering.")
+--        /run PE.Speak("Hi", { channel="EMOTE" })
+--
+--   4) explicit table:
+--        /run PE.Speak({ phraseKey="LOW_HEALTH", channel="SAY" })
+--        /run PE.Speak({ text="Raw text!", channel="YELL" })
+--        /run PE.Speak({ phr={ "a", "b" }, channel="SAY" }) -- SR-style pool
+
+function PE.Speak(...)
+    local argc = select("#", ...)
+    if argc == 0 then return end
+
+    -- Single argument
+    if argc == 1 then
+        local spec = select(1, ...)
+        local t = type(spec)
+
+        if t == "number" then
+            -- Treat as spellID bubble
+            return PE_SpeakSpellBubble(spec, nil, nil)
+        elseif t == "string" then
+            -- Try phraseKey first, then literal
+            if PE.Phrases and PE.Phrases.registry and PE.Phrases.registry[spec] then
+                return PE_SpeakPhraseKey(spec, nil)
+            else
+                return PE_SpeakLiteral(spec, nil)
+            end
+        elseif t == "table" then
+            -- Explicit table spec
+            if spec.spellID then
+                return PE_SpeakSpellBubble(spec.spellID, spec.isReactionOverride, spec.cfg or spec)
+            end
+            if spec.phraseKey then
+                return PE_SpeakPhraseKey(spec.phraseKey, spec)
+            end
+            if spec.text then
+                return PE_SpeakLiteral(spec.text, spec)
+            end
+            if spec.phr then
+                return PE_SpeakPool(spec)
+            end
+        end
+
+        return
+    end
+
+    -- Two or more arguments
+    local first = select(1, ...)
+    local second = select(2, ...)
+    local t1 = type(first)
+
+    if t1 == "number" then
+        -- spellID, isReactionOverride
+        return PE_SpeakSpellBubble(first, second, nil)
+    elseif t1 == "string" then
+        -- phraseKey or literal with options table
+        if type(second) == "table" or second == nil then
+            if PE.Phrases and PE.Phrases.registry and PE.Phrases.registry[first] then
+                return PE_SpeakPhraseKey(first, second)
+            else
+                return PE_SpeakLiteral(first, second)
+            end
+        end
+    end
+
+    -- If we get here, nothing matched; fail silently.
+end
+
+----------------------------------------------------
+-- Legacy Public APIs (kept for compatibility)
+----------------------------------------------------
+-- These now route through the same internal helpers.
+
+-- Core SR Logic (pool-based random speech)
+function SR(a)
+    return PE_SpeakPool(a)
+end
+
+-- Phrase Builder / Combo Engine
+function SetP(i, t)
+    if type(t) == "table" then
+        P[i] = t[math.random(#t)]
+    else
+        P[i] = t
+    end
+end
+
+function SpeakP(c, h, n)
+    if not PE.CanSpeak() then return end
+    c = c or 10
+    if math.random(c) ~= 1 then return end
+
+    h = h or "SAY"
+    n = n or 2
+
+    local s = ""
+    for i = 1, n do
+        s = s .. (P[i] or "")
+    end
+
+    if s ~= "" then
+        PE_SendPersonaMessage(s, h, { eventId = "SPEAKP" })
+    end
+end
+
+----------------------------------------------------
+-- Persona Engine - Macro usage helpers
 ----------------------------------------------------
 
 PE.Macros = PE.Macros or {}
@@ -425,16 +537,19 @@ function Macros.GetUsage()
         globalUsed = numGlobal,
         globalFree = maxGlobal - numGlobal,
         globalMax  = maxGlobal,
+
         charUsed   = numChar,
         charFree   = maxChar - numChar,
         charMax    = maxChar,
     }
 end
 
-
 ----------------------------------------------------
 -- Module registration
 ----------------------------------------------------
 
 PE.LogInit(MODULE)
-PE.RegisterModule("Core", { name = "Core Systems", class = "core", })
+PE.RegisterModule("Core", {
+    name  = "Core Systems",
+    class = "core",
+})
