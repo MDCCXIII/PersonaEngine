@@ -1,13 +1,10 @@
---TODO: we are not limited on space, why are we using cryptic, non-descriptive variable names
---TODO: at least if we are going to keep variables local instead of moving everything to globals then lets make local variables above the functions but below the headers so we can easily see and update values and know what the values are for if the variable names are descriptive in their naming convention 
-
 -- ##################################################
 -- PE_Icon.lua
 -- Free-floating status button (no minimap LibDBIcon)
 -- ##################################################
 
 local MODULE = "Icon"
-local PE = PE
+local PE     = PE
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -23,10 +20,20 @@ if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
 
+----------------------------------------------------
+-- UI constants for this module
+----------------------------------------------------
 
+local ICON_SIZE           = { w = 32, h = 32 }
+local ICON_INNER_SIZE     = { w = 20, h = 20 }
+local ICON_TEXTURE        = "Interface\\AddOns\\PersonaEngine\\references\\persona_brain_icon.tga"
+local ICON_BORDER_SIZE    = 54
+local ICON_BORDER_OFFSETX = 10.5
+local ICON_BORDER_OFFSETY = -10.1
 
 ----------------------------------------------------
--- Optional LDB object (no minimap icon)
+-- Optional LDB object (for broker displays only)
+-- No LibDBIcon usage → no minimap button.
 ----------------------------------------------------
 
 local LDB
@@ -38,7 +45,7 @@ if LDB then
     LDB:NewDataObject("PersonaEngine", {
         type = "data source",
         text = "Persona Engine",
-        icon = "Interface\\AddOns\\PersonaEngine\\references\\persona_brain_icon.tga",
+        icon = ICON_TEXTURE,
 
         OnClick = function(frame, button)
             if _G.PersonaEngine_Button_OnClick then
@@ -63,28 +70,28 @@ local function PersonaEngine_CreateButton()
         return PersonaEngineButton
     end
 
-    local cfg = PersonaEngineDB.button or {}
-    local d   = PersonaEngine_ButtonDefaults or {}
+    local buttonConfig    = PersonaEngineDB.button or {}
+    local buttonDefaults  = PersonaEngine_ButtonDefaults or {}
 
     local btn = CreateFrame("Button", "PersonaEngineButton", UIParent)
-    btn:SetSize(32, 32) --TODO: 32, 32 values should be moved to global variables so i have 1 solid and organized place to make uI updates, keep these values as defaults if global doesnt exist
-    btn:SetScale(cfg.scale or d.scale or 1.2)
+    btn:SetSize(ICON_SIZE.w, ICON_SIZE.h)
+    btn:SetScale(buttonConfig.scale or buttonDefaults.scale or 1.2)
 
-    btn:SetFrameStrata(cfg.strata or d.strata or "MEDIUM")
-    btn:SetFrameLevel((cfg.level or d.level or 1))
+    btn:SetFrameStrata(buttonConfig.strata or buttonDefaults.strata or "MEDIUM")
+    btn:SetFrameLevel(buttonConfig.level or buttonDefaults.level or 1)
 
-    btn:SetClampedToScreen(true) --Spike: could we add a btn:SetClampedToMinimap and then toggle between screen and minimap clamp on alt + rightclick?
-    btn:SetMovable(true) --TODO: hook this to a toggle option on alt + left click 
+    btn:SetClampedToScreen(true)
+    btn:SetMovable(true)
     btn:EnableMouse(true)
     btn:RegisterForDrag("LeftButton")
     btn:RegisterForClicks("AnyUp")
 
     btn:SetPoint(
-        cfg.point or d.point or "TOPRIGHT",
+        buttonConfig.point    or buttonDefaults.point    or "TOPRIGHT",
         UIParent,
-        cfg.relPoint or d.relPoint or "TOPRIGHT",
-        cfg.x or d.x or -150,
-        cfg.y or d.y or -170
+        buttonConfig.relPoint or buttonDefaults.relPoint or "TOPRIGHT",
+        buttonConfig.x        or buttonDefaults.x        or -150,
+        buttonConfig.y        or buttonDefaults.y        or -170
     )
 
     ------------------------------------------------
@@ -92,8 +99,8 @@ local function PersonaEngine_CreateButton()
     ------------------------------------------------
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("CENTER")
-    icon:SetSize(20, 20) --TODO: same here move this to global, keep these values as defaults if global doesnt exist
-    icon:SetTexture("Interface\\AddOns\\PersonaEngine\\references\\persona_brain_icon.tga") --TODO: for good measure, value into globals
+    icon:SetSize(ICON_INNER_SIZE.w, ICON_INNER_SIZE.h)
+    icon:SetTexture(ICON_TEXTURE)
     icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
     btn.icon = icon
 
@@ -102,8 +109,8 @@ local function PersonaEngine_CreateButton()
     ------------------------------------------------
     local border = btn:CreateTexture(nil, "OVERLAY")
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    border:SetPoint("CENTER", 10.5, -10.1)
-    border:SetSize(54, 54)
+    border:SetPoint("CENTER", ICON_BORDER_OFFSETX, ICON_BORDER_OFFSETY)
+    border:SetSize(ICON_BORDER_SIZE, ICON_BORDER_SIZE)
     btn.border = border
 
     ------------------------------------------------
@@ -115,10 +122,12 @@ local function PersonaEngine_CreateButton()
     hl:SetAllPoints(btn)
 
     ------------------------------------------------
-    -- Drag-save
+    -- Drag-save (Alt+Drag)
     ------------------------------------------------
     btn:SetScript("OnDragStart", function(self)
-        self:StartMoving()
+        if IsAltKeyDown() then
+            self:StartMoving()
+        end
     end)
 
     btn:SetScript("OnDragStop", function(self)
@@ -147,7 +156,7 @@ local function PersonaEngine_CreateButton()
     return btn
 end
 
--- Delay spawn so globals are ready
+-- Delay spawn so SavedVariables and globals are ready
 if C_Timer and C_Timer.After then
     C_Timer.After(0.1, PersonaEngine_CreateButton)
 else
@@ -156,65 +165,100 @@ end
 
 ----------------------------------------------------
 -- Click Handler
+--  - Unmodified Left/Right: world interaction (reserved)
+--  - Shift: config & engine toggle
+--  - Ctrl: dev tools (Lua errors / reload), DevMode only
+--  - Alt: used for dragging; no click actions
 ----------------------------------------------------
 
 function PersonaEngine_Button_OnClick(self, button)
-    -- DevMode Ctrl+Left: performance/debug panel
-    if PersonaEngineDB.DevMode and IsControlKeyDown() and button == "LeftButton" then
-        --removed perf frame -- free keybind slot available
+    local alt   = IsAltKeyDown()
+    local ctrl  = IsControlKeyDown()
+    local shift = IsShiftKeyDown()
+
+    -- ALT is layout/drag only; no actions on release
+    if alt then
         return
     end
-	
-	--TODO: just go ahead and put in the checks for left/right clicks with alt ctrl and shift mods even if we are not currently using them yet...
 
-    -- DevMode Shift-clicks: scriptErrors / reload
-    if IsShiftKeyDown() and PersonaEngineDB.DevMode then
+    -- Developer shortcuts (Ctrl+click), only when DevMode enabled
+    if PersonaEngineDB.DevMode and ctrl then
         if button == "LeftButton" then
             local cur = GetCVar("scriptErrors")
-            SetCVar("scriptErrors", (cur == "1") and 0 or 1) --TODO: this doesnt notify lua errors on/off, lets use tooltip status kind of like we have for dev mode... only show if lua errors on, otherwise keep TT clean
+            if cur == "1" then
+                SetCVar("scriptErrors", 0)
+                if PE.Log then PE.Log(4, "[PersonaEngine] Lua errors: OFF") end
+            else
+                SetCVar("scriptErrors", 1)
+                if PE.Log then PE.Log(4, "[PersonaEngine] Lua errors: ON") end
+            end
             ReloadUI()
             return
         elseif button == "RightButton" then
+            if PE.Log then PE.Log(4, "[PersonaEngine] Reloading UI (dev shortcut)") end
             ReloadUI()
             return
         end
     end
 
-    -- Normal behavior
-    if button == "LeftButton" then
-        if PE.ToggleConfig then
-            PE.ToggleConfig()
+    -- Config / Engine control (Shift+click)
+    if shift then
+        if button == "LeftButton" then
+            if PE.ToggleConfig then
+                PE.ToggleConfig()
+            end
+            return
+        elseif button == "RightButton" then
+            -- Toggle speech engine (SR_On) with flavor text
+            local wasOn = (SR_On == 1)
+            local nowOn = not wasOn
+            SR_On       = nowOn and 1 or 0
+
+            if nowOn then
+                local pool = PE_EngineOnLines or {}
+                local line = (#pool > 0 and pool[math.random(#pool)]) or "Speech module online."
+                SendChatMessage(line, "SAY")
+                if PE.Log then PE.Log("|cff00ff00Persona Engine Enabled|r") end
+            else
+                local offPool = PE_EngineOffLines or {}
+                local line = (#offPool > 0 and offPool[math.random(#offPool)]) or "Speech module offline."
+                SendChatMessage(line, "SAY")
+                if PE.Log then PE.Log("|cffff0000Persona Engine Disabled|r") end
+
+                local scaryPool = PE_EngineOffScaryLines or {}
+                if #scaryPool > 0 and math.random(20) == 1 then
+                    local scary = scaryPool[math.random(#scaryPool)]
+                    SendChatMessage(scary, "SAY")
+                end
+            end
+            return
         end
-        return
     end
 
-    if button == "RightButton" then
-        local old = SR_On
-        SR_On = (old == 1 and 0 or 1)
-
-        if SR_On == 1 then
-            local pool = PE_EngineOnLines or {}
-            local line = (#pool > 0 and pool[math.random(#pool)]) or "Speech module online."
-            SendChatMessage(line, "SAY") --this could potentially cause taint if used at the wrong time, however i have never yet had this cause issue for me
-            if PE.Log then PE.Log("|cff00ff00Persona Engine Enabled|r") end
+    -- Unmodified clicks: world interaction (reserved for your future logic)
+    if button == "LeftButton" then
+        -- Primary world interaction hook
+        if PE.WorldInteractPrimary then
+            PE.WorldInteractPrimary()
         else
-            local offPool = PE_EngineOffLines or {}
-            local line = (#offPool > 0 and offPool[math.random(#offPool)]) or "Speech module offline."
-            SendChatMessage(line, "SAY")
-            if PE.Log then PE.Log("|cffff0000Persona Engine Disabled|r") end
-
-            local scaryPool = PE_EngineOffScaryLines or {}
-            if #scaryPool > 0 and math.random(20) == 1 then
-                local scary = scaryPool[math.random(#scaryPool)]
-                SendChatMessage(scary, "SAY") --this could potentially cause taint if used at the wrong time, however i have never yet had this cause issue for me
-            end
+            -- Placeholder behavior; safe to replace later
+            -- SendChatMessage("Copporclang peers at the surroundings, gears whirring.", "SAY")
+        end
+        return
+    elseif button == "RightButton" then
+        -- Secondary world interaction hook
+        if PE.WorldInteractSecondary then
+            PE.WorldInteractSecondary()
+        else
+            -- Placeholder behavior; safe to replace later
+            -- SendChatMessage("Copporclang adjusts some invisible dials in the air.", "SAY")
         end
         return
     end
 end
 
 ----------------------------------------------------
--- Tooltip (restored full version) --TODO: stop putting these comments in code like this, the header is great and by all means feel free to put usage or comments but it's only (restored full version) until a few days goes by and then we dont even know the difference between restored or original
+-- Tooltip
 ----------------------------------------------------
 
 function PersonaEngine_Button_OnTooltip(tt)
@@ -224,25 +268,60 @@ function PersonaEngine_Button_OnTooltip(tt)
 
     tt:ClearLines()
     tt:AddLine("Persona Engine", 1, 1, 1)
-    tt:AddLine("|cff00ff88Tasu Copporclang's Personality Core|r") -- added first name to surname
+    tt:AddLine("|cff00ff88Copporclang's Personality Core|r")
     tt:AddLine(" ")
 
-    tt:AddLine("|cffffffffLeft-click:|r Open control console", 0.8, 0.8, 0.8)
-    tt:AddLine("|cffffffffRight-click:|r Toggle speech module", 0.8, 0.8, 0.8)
+    -- World interaction summary
+    tt:AddLine("|cffffffffLeft-click:|r World interaction (primary)", 0.8, 0.8, 0.8)
+    tt:AddLine("|cffffffffRight-click:|r World interaction (secondary)", 0.8, 0.8, 0.8)
+
+    tt:AddLine(" ")
+    tt:AddLine("|cffffffffShift+Left-click:|r Open control console", 0.8, 0.8, 0.8)
+    tt:AddLine("|cffffffffShift+Right-click:|r Toggle speech module", 0.8, 0.8, 0.8)
+    tt:AddLine("|cffffffffAlt+Drag:|r Move icon", 0.8, 0.8, 0.8)
 
     if PersonaEngineDB.DevMode then
-        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0) --spike: is this still a thing? should be still... 
-        tt:AddLine("|cffffffffCtrl+Left-click:|r Performance panel", 0.8, 0.8, 0.8) --TODO: perf is no longer a thing
-        tt:AddLine("|cffffffffShift+Left-click:|r Toggle Lua errors & reload", 0.8, 0.8, 0.8)
-        tt:AddLine("|cffffffffShift+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
-    else
-        tt:AddLine("|cffa0a0a0Shift-click: Dev features disabled|r")
+        tt:AddLine(" ")
+        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0)
+
+        local luaOn = (GetCVar("scriptErrors") == "1")
+        local luaText = luaOn and "|cff00ff00Lua errors: ON|r" or "|cffff0000Lua errors: OFF|r"
+        tt:AddLine(luaText)
+
+        tt:AddLine("|cffffffffCtrl+Left-click:|r Toggle Lua errors & reload", 0.8, 0.8, 0.8)
+        tt:AddLine("|cffffffffCtrl+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
     end
 
     tt:AddLine(" ")
     tt:AddLine("|cffffd200Warning: Button may emit stray ideas.|r")
 
-    tt:Show()   -- <- the missing piece --TODO: this is what i mean about the comments like this, missing piece ???? what? (i only know what this comment is talking about because it was recent and still fresh in my mind...
+    tt:Show()
+end
+
+----------------------------------------------------
+-- Keybind-facing world interaction function
+-- This gives you a third path, separate from left/right click.
+----------------------------------------------------
+
+function PE.WorldInteractBinding()
+    -- Called from a keybinding, e.g. via Bindings.xml:
+    -- <Binding name="PE_WORLD_INTERACT" header="PersonaEngine">
+    --   PE.WorldInteractBinding()
+    -- </Binding>
+
+    if PE.WorldInteract then
+        -- If you define a single general handler, use that
+        PE.WorldInteract()
+        return
+    end
+
+    if PE.WorldInteractPrimary then
+        PE.WorldInteractPrimary()
+        return
+    end
+
+    -- Fallback placeholder
+    -- SendChatMessage("Copporclang taps the world with a curious wrench.", "SAY")
 end
 
 ----------------------------------------------------
