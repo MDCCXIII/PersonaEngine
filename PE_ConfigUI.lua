@@ -110,7 +110,7 @@ local function BuildConfigFrame()
         configFrame:Hide()
     end
 
-    -- Backwards-compat alias for anything expecting this name
+    -- Backwards-compat alias
     if not _G["PersonaEngineConfigFrame"] then
         _G["PersonaEngineConfigFrame"] = configFrame
     end
@@ -168,12 +168,12 @@ local function BuildConfigFrame()
     settingsLabel:SetText("Persona Engine Settings (coming soon)")
 
     ------------------------------------------------
-    -- Helper to create a bordered box
+    -- Helper: apply a subtle border to a frame
     ------------------------------------------------
 
-    local function CreateBorderBox(parent)
-        local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-        box:SetBackdrop({
+    local function ApplyBorder(frame)
+        if not frame.SetBackdrop then return end
+        frame:SetBackdrop({
             bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
             edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
             tile     = true,
@@ -181,9 +181,8 @@ local function BuildConfigFrame()
             edgeSize = 16,
             insets   = { left = 3, right = 3, top = 3, bottom = 3 },
         })
-        box:SetBackdropColor(0, 0, 0, 0.4)
-        box:SetBackdropBorderColor(0.3, 0.3, 0.3)
-        return box
+        frame:SetBackdropColor(0, 0, 0, 0.4)
+        frame:SetBackdropBorderColor(0.3, 0.3, 0.3)
     end
 
     ------------------------------------------------
@@ -203,28 +202,18 @@ local function BuildConfigFrame()
     spellEdit:SetHeight(20)
     configFrame.spellEdit = spellEdit
 
-    local spellIcon = actionPage:CreateTexture(nil, "OVERLAY")
-    spellIcon:SetSize(24, 24)
+    local loadButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
+    loadButton:SetSize(70, 22)
+    loadButton:SetPoint("TOPRIGHT", actionPage, "TOPRIGHT", -4, -2)
+    loadButton:SetText("Load")
 
-    local loadButton
-    if UI and UI.CreateButton then
-        loadButton = UI.CreateButton(actionPage, {
-            text  = "Load",
-            size  = { 70, 22 },
-            point = { "TOPRIGHT", actionPage, "TOPRIGHT", -4, -2 },
-        })
-    else
-        loadButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
-        loadButton:SetSize(70, 22)
-        loadButton:SetPoint("TOPRIGHT", actionPage, "TOPRIGHT", -4, -2)
-        loadButton:SetText("Load")
-    end
-
-    -- Now that loadButton exists, anchor spellEdit & icon between label and button
+    -- Between label and Load
     spellEdit:ClearAllPoints()
     spellEdit:SetPoint("LEFT", spellLabel, "RIGHT", 8, 0)
     spellEdit:SetPoint("RIGHT", loadButton, "LEFT", -32, 0)
 
+    local spellIcon = actionPage:CreateTexture(nil, "OVERLAY")
+    spellIcon:SetSize(24, 24)
     spellIcon:SetPoint("LEFT", spellEdit, "RIGHT", 4, 0)
 
     local spellInfoText = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -428,67 +417,75 @@ local function BuildConfigFrame()
     configFrame.channelCheckboxes = chanChecks
 
     ------------------------------------------------
-    -- Phrase editor with bordered box, fills middle
+    -- Phrase editor: scrollframe with border, fills middle
     ------------------------------------------------
 
     local phraseLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
     phraseLabel:SetText("Phrases (one per line):")
 
-    local phraseBox = CreateBorderBox(actionPage)
-    phraseBox:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", -4, -4)
-    phraseBox:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -8, 130)
+    local phraseScroll = CreateFrame(
+        "ScrollFrame",
+        "PersonaEnginePhraseScroll",
+        actionPage,
+        "UIPanelScrollFrameTemplate,BackdropTemplate"
+    )
+    phraseScroll:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", -4, -6)
+    phraseScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -28, 130)
+    ApplyBorder(phraseScroll)
 
-    local scrollFrame, phraseEdit
-    if UI and UI.CreateMultilineEdit then
-        scrollFrame, phraseEdit = UI.CreateMultilineEdit(phraseBox, {
-            size  = { 400, 200 },
-            point = { "TOPLEFT", phraseBox, "TOPLEFT", 4, -4 },
-        })
-    else
-        scrollFrame = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", phraseBox, "UIPanelScrollFrameTemplate")
-        scrollFrame:SetPoint("TOPLEFT", phraseBox, "TOPLEFT", 4, -4)
-        scrollFrame:SetPoint("BOTTOMRIGHT", phraseBox, "BOTTOMRIGHT", -4, 4)
+    local phraseEdit = CreateFrame("EditBox", nil, phraseScroll)
+    phraseEdit:SetMultiLine(true)
+    phraseEdit:SetAutoFocus(false)
+    phraseEdit:SetFontObject(ChatFontNormal)
+    phraseEdit:SetJustifyH("LEFT")
+    phraseEdit:SetJustifyV("TOP")
+    phraseScroll:SetScrollChild(phraseEdit)
 
-        phraseEdit = CreateFrame("EditBox", nil, scrollFrame)
-        phraseEdit:SetMultiLine(true)
-        phraseEdit:SetAutoFocus(false)
-        phraseEdit:SetFontObject(ChatFontNormal)
-        phraseEdit:SetJustifyH("LEFT")
-        phraseEdit:SetJustifyV("TOP")
-        scrollFrame:SetScrollChild(phraseEdit)
+    -- Resize logic: width follows scrollframe; height follows text
+    local function UpdatePhraseLayout()
+        local w = math.max(0, phraseScroll:GetWidth() - 12)
+        phraseEdit:SetWidth(w)
+        local textHeight = phraseEdit:GetTextHeight() or 0
+        if textHeight < 20 then
+            textHeight = phraseScroll:GetHeight() - 12
+        end
+        phraseEdit:SetHeight(textHeight + 16)
+        phraseScroll:UpdateScrollChildRect()
     end
 
-    -- Adjust inner edit when box resizes
-    phraseBox:SetScript("OnSizeChanged", function(self, width, height)
-        local w = math.max(0, width - 8)
-        local h = math.max(0, height - 8)
-        phraseEdit:SetWidth(w - 20)
-        phraseEdit:SetHeight(h)
+    phraseScroll:SetScript("OnSizeChanged", function()
+        UpdatePhraseLayout()
     end)
 
-    phraseEdit:SetWidth(phraseBox:GetWidth() - 28)
-    phraseEdit:SetHeight(phraseBox:GetHeight() - 8)
+    phraseEdit:SetScript("OnTextChanged", function()
+        UpdatePhraseLayout()
+    end)
+
+    -- Initial layout
+    UpdatePhraseLayout()
 
     configFrame.phraseEdit   = phraseEdit
-    configFrame.phraseScroll = scrollFrame
+    configFrame.phraseScroll = phraseScroll
 
     ------------------------------------------------
-    -- Macro snippet region (multi-line in bordered box)
+    -- Macro snippet: shorter scrollframe with border, anchored to bottom
     ------------------------------------------------
 
-    local macroBox = CreateBorderBox(actionPage)
-    macroBox:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 40)
-    macroBox:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -8, 40)
-    macroBox:SetHeight(60)  -- ~3 lines default; window resize will make it visually feel larger/smaller
+    local macroScroll = CreateFrame(
+        "ScrollFrame",
+        nil,
+        actionPage,
+        "UIPanelScrollFrameTemplate,BackdropTemplate"
+    )
+    macroScroll:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 40)
+    macroScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -28, 40)
+    macroScroll:SetHeight(60)  -- ~3 lines high
+    ApplyBorder(macroScroll)
 
     local macroLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    macroLabel:SetPoint("BOTTOMLEFT", macroBox, "TOPLEFT", 4, 2)
+    macroLabel:SetPoint("BOTTOMLEFT", macroScroll, "TOPLEFT", 4, 2)
     macroLabel:SetText("Macro snippet:")
-
-    local macroScroll = CreateFrame("ScrollFrame", nil, macroBox, "UIPanelScrollFrameTemplate")
-    macroScroll:SetPoint("TOPLEFT", macroBox, "TOPLEFT", 4, -4)
-    macroScroll:SetPoint("BOTTOMRIGHT", macroBox, "BOTTOMRIGHT", -4, 4)
 
     local macroEdit = CreateFrame("EditBox", nil, macroScroll)
     macroEdit:SetMultiLine(true)
@@ -498,15 +495,24 @@ local function BuildConfigFrame()
     macroEdit:SetJustifyV("TOP")
     macroScroll:SetScrollChild(macroEdit)
 
-    macroBox:SetScript("OnSizeChanged", function(self, width, height)
-        local w = math.max(0, width - 8)
-        local h = math.max(0, height - 8)
-        macroEdit:SetWidth(w - 20)
-        macroEdit:SetHeight(h)
+    local function UpdateMacroLayout()
+        local w = math.max(0, macroScroll:GetWidth() - 12)
+        macroEdit:SetWidth(w)
+        local textHeight = macroEdit:GetTextHeight() or 0
+        if textHeight < 20 then
+            textHeight = macroScroll:GetHeight() - 12
+        end
+        macroEdit:SetHeight(textHeight + 16)
+        macroScroll:UpdateScrollChildRect()
+    end
+
+    macroScroll:SetScript("OnSizeChanged", function()
+        UpdateMacroLayout()
     end)
 
-    macroEdit:SetWidth(macroBox:GetWidth() - 28)
-    macroEdit:SetHeight(macroBox:GetHeight() - 8)
+    macroEdit:SetScript("OnTextChanged", function()
+        UpdateMacroLayout()
+    end)
 
     macroEdit:SetScript("OnEditFocusGained", function(self)
         self:HighlightText(0, #self:GetText())
@@ -516,6 +522,7 @@ local function BuildConfigFrame()
         self:ClearFocus()
     end)
 
+    UpdateMacroLayout()
     configFrame.macroEdit = macroEdit
 
     ------------------------------------------------
@@ -580,22 +587,11 @@ local function BuildConfigFrame()
         spellInfoText:SetText((spellInfoText:GetText() or "") .. " |cff20ff20Saved.|r")
     end
 
-    local saveButton
-    if UI and UI.CreateButton then
-        saveButton = UI.CreateButton(actionPage, {
-            text  = "Save Config",
-            size  = { 120, 24 },
-            point = { "BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 4 },
-            onClick = SaveCurrentConfig,
-        })
-    else
-        saveButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
-        saveButton:SetSize(120, 24)
-        saveButton:SetPoint("BOTTOMLEFT", 4, 4)
-        saveButton:SetText("Save Config")
-        saveButton:SetScript("OnClick", SaveCurrentConfig)
-    end
-
+    local saveButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
+    saveButton:SetSize(120, 24)
+    saveButton:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 4)
+    saveButton:SetText("Save Config")
+    saveButton:SetScript("OnClick", SaveCurrentConfig)
     configFrame.saveButton = saveButton
 
     ------------------------------------------------
