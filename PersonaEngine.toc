@@ -10,37 +10,17 @@
 # Core namespace + logging
 PE_Globals.lua
 PE_Core.lua
-PE_Taint.lua
 
-# Mood / NPC memory / persona language engine
-PE_Mood.lua
+
 PE_NPCMemory.lua
-PE_PersonaLanguage.lua
-
-# Text / language systems (legacy phrase data, structures, inflections)
-PE_Phrases.lua
-PE_SentenceStructures.lua
-PE_Inflections.lua
-PE_DynamicPhrases.lua
-
-# Spell config + macro helpers
-PE_SpellDB.lua
-PE_SpellHooks.lua
-
-# Profiles / defaults
-PE_Profiles.lua
-PE_Profile_Copporclang.lua
 
 # Visuals / icons
 PE_VFX.lua
 PE_Icon.lua
 
-# Debug / config UI
-PE_Cloud9_Panel.lua
+# config UI
 PE_ConfigUI.lua
 
-# Slash commands
-PE_Slash.lua
 
 # Experimental playground (kept last on purpose)
 PE_Experimental.lua
