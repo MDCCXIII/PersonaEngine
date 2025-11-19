@@ -1,0 +1,109 @@
+On the when should copporclang speak i want to repurpose this
+
+As the command is now bound to protected frames through macros
+
+On cast makes some sense to the context
+
+and in theory, let me paint an example
+Lets say this is my macro for kill command
+#showtooltip Kill Command
+/run PE.Say("spell", 259489)
+/cast Kill Command
+
+if i create another spell-phrases binding to a macro for Dash (pet ability)
+When Cooldown Starts
+Phrases: My machines come with rocket boosters!
+/run PE.Say("spell", 61684)
+
+and then combine the two say lines into kill command
+#showtooltip Kill Command
+/run PE.Say("spell", 259489)
+/run PE.Say("spell", 61684)
+/cast Kill Command
+
+then when the user presses the macro for kill command they have chance to say a phrase for kill command, but if that doesnt happen, or if the kill command is on CD then there is a check to see if dash is on CD  and a chance to say an entirely different line 
+
+same logic could be applied to When Cooldown ready.
+
+but i also think we could extend the list of when should copporclang speak, 
+
+the problem im having is i really want to be able to build a macro and bind phrases to different conditionals or even do multi-say type functionality in my example through the Action Phrases & macro's screen as a one stop shop /editor
+
+im also curious if we could get this to be a full on macro manger (maybe a pop-up menu showing icons of all the different spells we have bound, click the spell it loads the saved macro in the text, you can edit it or whatever save it, go back into the popup and drag macro's down to a bar/button directly from the config
+You said:
+I want to re-make mood
+
+7 emotions (primary) -     	furious 		- irritated 	- frustrated 	- calm 		- content - joyful 		- elated
+Mood (Scale)            -1 <----------------------------------------------------0-----------------------------------------> +1  
+7 outlook (secondary) 	disillusioned 	- pessimistic 	- skeptical 	- realistic - hopeful - optimistic - idealistic
+
+Furious – intense, explosive anger
+Irritated – annoyed, bothered, short-tempered
+Frustrated – upset due to obstacles or unmet expectations
+Calm – emotionally neutral, steady
+Content – quietly satisfied, at ease
+Joyful – visibly happy, uplifted
+Elated – intensely happy, euphoric
+
+Disillusioned – deeply skeptical, often bitter from past disappointments
+Pessimistic – expects negative outcomes, sees flaws and risks
+Skeptical – questions motives and outcomes, cautious but not hopeless
+Realistic – grounded, sees both pros and cons without emotional bias
+Hopeful – leans positive, sees potential but acknowledges challenges
+Optimistic – expects good outcomes, focuses on opportunities
+Idealistic – driven by high ideals, believes in the best of people and possibilities
+
+these are all currently in default order
+now you apply a bias (player choice) on a single emotion and a single outlook (this says how they want their character to be mood wise most of the time
+if you imagine each base mood having an equal length on the line, when the character picks a bias, that bias increases the length of that mood on the line and progressively lessens the line length of other moods as you move away in either direction of the bias choice
+the further away the mood from the bias the shorter the line gets (but overall both primary and secondary lines stay the same overall length)
+now you add weights to each of these moods based on character stats then you sort the each on their line by order of weight
+then you say the character always starts out on a value that is middle of their bias mood
+now as events happen in game you give those event types a positive or negative value (possibly with mulitplier)
+events move the characters value on the scale (ranging from -1 to +1) and time will always degrade at a base speed (we may possibly give bonuses or multipliers to this base rate depending on activity or freequency of - and + values on the scale) (eg. its bad it good it bad its good ... fuck my character is going nuts, one moment hes happy then furious then stoic and existential)
+
+the weights then change with the character as the character grows because of stats
+and the events are constantly giving pushes to extremes or different moods
+time heals all
+
+but mood can then decide what kind of phrase we say
+
+we can then allow users to bind phrases to the different moods available
+
+finally we should allow the configuration of dynamic phrases for anything we can bind phrases to by adding into the phrase box a line like 
+({beginning} are of the {ending})
+then another line like -- (example base phrase for reference: My devices are of the utmost quality and craftsmanship!)
+beginning=my devices, the gadgets i envent, my schematics, devices spawned from my nether regions
+ending=utmost quality and craftsmanship, utmost pain in my assmanship, crude yet informative type, most deadly in the universe
+
+on save we add the sentence format and build the actual lists to feed it in the back end bound by the action/mood/character id 
+You said:
+I want the user to be able to make as complexe of a sentence structure as they like though, I dont want to limit them, the rule is
+Sentence format line: ({must}{match})
+Key values: must= you seem,i'm,he's,she's,they are
+Key values: match=bored
+
+We can enforce this format and validate on save error ingredients if typos or bad syntax
+You said:
+One last thing we could allow users to
+
+(<mood> [gamestate]{key1}{key2})
+<mood>[gamestate] phrase
+Mood or gamestate completely optional and we could add autocomplete suggestions when user types < or [
+Then the id gets bound with that mood/gamestate choice
+You said:
+<primary1|secondary><primary|secondary><primary><secondary><primary1>[state1|state2][state3][state1] I shall speak
+
+This should still be valid and would allow us to compile
+
+It would look like
+<primary1><primary|secondary><primary><secondary>[state1][state3] I shall speak
+
+Notice in our take <primary1> overrides <primary1|secondary>
+User said content and optimistic but then later said content, so we chopped the extra conditional since we will always allow when content mood no matter what secondary mood we may be in, also same thing happened with state1, user said fire this if we are in combat and on fire but we chop the extra because they later said in combat regardless of other state
+
+By allowing more than one <> or [] even if they are mixed e.g. <><>[]<>[] phrase this is fine and allows for multi-conditioning 
+You said:
+Last thing I want to say here, we should auto format to accurate layout on save so the user avoids confusion, it seems counter intuitive but if the save format is not what they actually wanted then it will signal them to fix it 
+You said:
+I would add a ? Button on the form near or in the phrase box explaining the rules, formatting, and auto-format behaviors like you done here with me but compressed for user reading
