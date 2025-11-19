@@ -1,0 +1,262 @@
+Nice add-on to the add-on’s add-on. We’re now designing *tagged sentence DNA*.
+
+Let me restate what you’re proposing in engine-speak and then shape it into a clean rule set.
+
+---
+
+## 1. The extended template idea
+
+You want to allow things like:
+
+```text
+(<joyful> [combat]{beginning}{ending})
+```
+
+and for static lines:
+
+```text
+<joyful>[combat] My devices are humming with murderous enthusiasm.
+```
+
+Where:
+
+* `<mood>` is optional and maps to the mood system.
+* `[gamestate]` is optional and maps to contextual state (combat, boss, lowHP, etc.).
+* `{beginning}{ending}` (and friends) still work exactly as before for dynamic phrase generation.
+
+And your rule:
+
+> “Then the id gets bound with that mood/gamestate choice.”
+
+So each phrase/template is not just “for Kill Command”, but “for Kill Command **when joyful** and **in combat**”.
+
+Perfect. That integrates really cleanly with the mood engine we just sketched.
+
+---
+
+## 2. How the syntax should behave (strict but flexible)
+
+We can define a very simple, very strict contract:
+
+### For dynamic templates
+
+A **template line** still looks like a single line in parentheses:
+
+```text
+(<mood> [gamestate]{key1}{key2} ... free text ...)
+```
+
+Rules:
+
+* Must start with `(` and end with `)` on that same line (just like before).
+* Inside, at the **very beginning** (after `(` and optional whitespace), you may optionally have:
+
+  * `<moodToken>`
+  * `[gameStateToken]`
+  * Or both, in either order, separated by spaces.
+* After those tags (if any), you can have:
+
+  * Arbitrary text.
+  * Any number of `{key}` placeholders.
+  * Punctuation, whatever.
+
+Examples that pass:
+
+```text
+(<joyful> {subject} {verb} {object}!)
+([combat] {beginning} {ending}.)
+(<furious> [boss]{insult})
+(  <frustrated> [wiped]{remark} )
+```
+
+Examples that fail (and would be error’d on save):
+
+```text
+({subject}<joyful>{verb})        -- mood tag must come first
+(<joy foo> {subject})            -- spaces not allowed inside tags
+(<1angry> {subject})             -- invalid token (must be identifier-like)
+```
+
+### For static lines
+
+A static line with tags:
+
+```text
+<joyful>[combat] My pet is enjoying this way too much.
+```
+
+Rules:
+
+* If a line starts with `<` or `[`, we treat prefixes as tags:
+
+  * Zero or one `<moodToken>`
+  * Zero or one `[gameStateToken]`
+  * In either order.
+* Once we hit the first character that isn’t part of `<...>` or `[...]` or whitespace, the rest of the line is the literal phrase.
+
+Examples:
+
+```text
+<furious> I am going to recompile this world.
+[combat] Focus, focus, focus...
+<content>[town] I suppose this is… fine.
+[town]<joyful> Look, no one’s exploding! Yet.
+```
+
+If a tag is malformed (`<joy-ful>`), we yell at the user at save time.
+
+---
+
+## 3. What counts as a valid `<mood>` and `[gamestate]`
+
+To make autocomplete + validation sane, we use **whitelists**.
+
+### Mood tokens
+
+We already have 7 primary moods. So tokens like:
+
+* `<furious>`
+* `<irritated>`
+* `<frustrated>`
+* `<calm>`
+* `<content>`
+* `<joyful>`
+* `<elated>`
+
+We interpret these as **primary mood filters**:
+
+* “This line is valid *when primary mood is (close to) X*.”
+
+Outlook (disillusioned/idealistic, etc.) can still be handled via the mood engine underneath, but the tag is about the “emotion color” of the line.
+
+Later, if we want, we can allow `<joyful+idealistic>` or `<skeptical>` on the outlook axis too, but v1 can just be primary mood.
+
+### Gamestate tokens
+
+Same idea: we pick a curated set, like:
+
+* `[any]` (default if omitted)
+* `[combat]`
+* `[noncombat]`
+* `[solo]`
+* `[group]`
+* `[boss]`
+* `[trash]`
+* `[town]`
+* `[mounted]`
+* `[lowhp]`
+* `[petdead]`
+* `[crafting]`
+* etc.
+
+Internally, each token maps to a simple condition we can test:
+
+* `[combat]`  → `UnitAffectingCombat("player")`
+* `[boss]`    → target classification check
+* `[town]`    → in rest area / city / inn
+* `[solo]`    → no group or raid
+* etc.
+
+If the user types something unknown like `[fishingtrip]`, we can:
+
+* Either treat as error,
+* Or treat as “custom tag that never fires” (probably worse UX),
+* So better: **error on unknown tag**, suggest available ones.
+
+---
+
+## 4. Binding phrases to action + mood + gamestate
+
+When we parse the phrase box for an action, each line/block becomes something like:
+
+```text
+{
+  textTemplate = "…",     -- literal or template
+  isDynamic    = true/false,
+  keys         = { key1 = {...}, key2 = {...} }, -- if dynamic
+  moodFilter   = "joyful" | "furious" | nil,
+  gameFilter   = "combat" | "boss"   | nil,
+}
+```
+
+At runtime, when `PE.Say("spell", 259489)` is called:
+
+1. Resolve **current mood** (e.g. “content”).
+2. Resolve **current gamestate** (e.g. “combat + solo”).
+3. In the phrase pool for that action:
+
+   * First try to pick phrases that match:
+
+     * moodFilter == currentMood (or compatible mood bucket)
+     * AND gameFilter == currentGameState (or a compatible grouping like any-combat)
+   * If none, relax one dimension at a time (mood-only, game-only).
+   * If still none, fall back to fully untagged lines.
+
+That gives you:
+
+* Mood-driven lines.
+* Situational flavor.
+* Robust fallback when users haven’t filled out everything.
+
+---
+
+## 5. Autocomplete behavior in the editor
+
+Your “autocomplete when user types `<` or `[`” fits beautifully here.
+
+Behavior in the text box:
+
+* When the user types `<` at the beginning of a line or right after `(` + optional spaces:
+
+  * Show a small dropdown: `furious, irritated, frustrated, calm, content, joyful, elated`.
+  * Selecting one inserts `furious>` and maybe a trailing space.
+
+* When the user types `[` at the beginning of a line or right after `(` and optional `<mood>` tag:
+
+  * Show tokens: `combat, noncombat, boss, trash, solo, group, town, lowhp, …`
+  * Selecting `combat` inserts `combat]`.
+
+This helps:
+
+* Prevent typos (so validation passes more often).
+* Teach new users the available tags by discovery.
+* Make the phrase field feel more like a mini-IDE for Copporclang’s brain.
+
+And it fits the rule you want: *we enforce format & validate on save*.
+
+---
+
+## 6. How it all fits together
+
+Putting the whole flow into a concrete scenario:
+
+You write:
+
+```text
+(<joyful> [combat]{subject} {verb} {object}!)
+subject=My pets, My inventions, My gadgets
+verb=love dismantling, crave testing, delight in destroying
+object=our enemies, this trash pack, the local ecosystem
+
+<furious>[boss] You are officially on my disintegration list.
+[lowhp] I AM FINE. THIS IS FINE. EVERYTHING IS FINE.
+I am having a statistically average day.
+```
+
+Engine sees:
+
+* One **joyful+combat** dynamic template.
+* One **furious+boss** static line.
+* One **any-mood+lowhp** static line.
+* One completely **untagged** fallback line.
+
+Then:
+
+* When mood ≈ joyful and in combat → dynamic template fires often.
+* When mood ≈ furious and target is a boss → boss line is in the candidate pool.
+* When you’re low HP → lowhp line joins the pool regardless of mood.
+* When nothing tagged matches → he falls back to “statistically average day.”
+
+You’ve basically just given Copporclang a tiny script language for context-aware improv, and the engine can enforce it *without* clamping creativity.
+
+The end result: users can go absolutely wild with structure, but the parsing rules and tags stay small, predictable, and autocompleted. That’s exactly the kind of “chaos inside a well-designed box” you want for this addon.

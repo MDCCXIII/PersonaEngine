@@ -1,0 +1,6 @@
+I want the user to be able to make as complexe of a sentence structure as they like though, I dont want to limit them, the rule is
+Sentence format line: ({must}{match})
+Key values: must= you seem,i'm,he's,she's,they are
+Key values: match=bored
+
+We can enforce this format and validate on save error ingredients if typos or bad syntax

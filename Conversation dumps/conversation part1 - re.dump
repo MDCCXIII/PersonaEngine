@@ -1,0 +1,311 @@
+Gotcha, brain-only mode. No new tentacles of Lua… yet.
+
+Let’s unpack what you’re trying to do and see where the engine design wants to land.
+
+---
+
+## 1. What your Kill Command + Dash example is *really* asking for
+
+Your example macro:
+
+```txt
+#showtooltip Kill Command
+/run PE.Say("spell", 259489)
+/run PE.Say("spell", 61684)
+/cast Kill Command
+```
+
+And the configs:
+
+* Kill Command → “On Cast”
+* Dash → “When Cooldown Starts” + phrase “My machines come with rocket boosters!”
+
+Desired behavior:
+
+* Press button:
+
+  * Try to say something about Kill Command.
+  * If Kill Command doesn’t produce a line (because CD / chance / whatever), then
+  * Check Dash’s state: if Dash is just going on CD, say *its* line.
+
+The important detail: **the branching logic lives inside the addon, not in the macro.**
+Macros are dumb, single-pass scripts; they can’t say “if the previous /run didn’t do anything, skip the next one.”
+
+So we basically have two design paths:
+
+### Path A: Let each PE.Say call be totally independent
+
+Each `/run PE.Say("spell", X)` checks its own config + state:
+
+* Kill Command call: “Am I configured? Allowed to speak? Conditions met?”
+* Dash call: same.
+
+Pros:
+
+* Easy to reason about.
+* The user can add/remove calls freely.
+
+Cons:
+
+* You don’t get the **“if KC didn’t speak, then try Dash”** behavior.
+  They might both be silently blocked by gating, or Dash might speak even if KC already spoke (depending on gating rules).
+
+### Path B: Make PE.Say smarter and treat a *sequence* of calls as one decision
+
+This is more what you *actually* want.
+
+Conceptually:
+
+* Every “persona decision window” = one key press.
+* During that key press, multiple PE.Say calls can run.
+* Internally, we track:
+
+  * “Has anything spoken yet this press?”
+  * “What are the candidate actions and their priorities / conditions?”
+* First call: KC registers as a candidate (“On Cast”).
+* Second call: Dash registers as a candidate (“On CD Start”).
+* At the end of the keypress, we pick the best candidate and speak once.
+
+The catch: macros don’t have an explicit “end-of-press” hook. But we can cheat:
+
+* Use **global speak throttle** like you already have (`PE.CanSpeak`).
+* Treat calls in order:
+
+  * First call (KC) tries to speak; if chance fails OR its conditions fail, it does nothing but *doesn’t* consume the global “spoken this press” flag.
+  * Second call (Dash) checks:
+
+    * Did something already speak this press?
+    * Do *my* conditions pass (CD just started, etc.)?
+    * If yes: speak and now lock out any further calls.
+
+So from your perspective: same macro, but inside `PE.Say` we’re doing “first eligible wins” per keypress.
+
+---
+
+## 2. Reframing “When should Copporclang speak?”
+
+Before, “On Cast / When Cooldown Starts / When Cooldown Ready” were **event triggers** tied to spell events.
+Now, they’re **conditions** evaluated only when a macro calls `PE.Say`.
+
+Mechanically:
+
+* We’re allowed to listen to game events to track state:
+
+  * Spell cooldowns
+  * Spell cast success
+  * Buffs, auras, etc.
+* But we’re *not* allowed to fire chat on those events.
+* Instead, on `/run PE.Say("spell", X)` we:
+
+  1. Grab pre-tracked state: current cooldown, last state, etc.
+  2. Evaluate conditions like:
+
+     * `ON_PRESS` → always eligible.
+     * `ON_CAST` → only eligible if the spell is usable & not on CD right now.
+     * `ON_CD_START` → eligible if we detect this key press is the first moment CD became > 0.
+     * `ON_CD_READY` → eligible if on last check CD > 0 and now it’s ≤ GCD-ish.
+  3. If the config’s condition is satisfied, *then* we roll chance and maybe speak.
+
+So your Dash config:
+
+* Trigger: `ON_CD_START`
+* On each `/run PE.Say("spell", 61684)`, we check:
+
+  * Did the CD transition from “ready” → “not ready” since last check?
+  * If yes, it’s eligible; roll chance → maybe talk.
+
+In English:
+
+> “I only talk about Dash when you just kicked its cooldown off, and only when you ask me (by hitting the macro).”
+
+Still 100% macro-driven. All we stole from the game is state.
+
+---
+
+## 3. Extending the trigger list sanely
+
+We don’t want a supermarket aisle of nonsense. We want a tight little menu that maps well to your design brain.
+
+Good candidates:
+
+* **On Press** – always eligible when macro runs (pure personality spam with chance gating).
+* **On Cast** – eligible only if the spell would actually cast right now:
+
+  * not on CD
+  * you have resources
+* **When Cooldown Starts** – first time the spell goes on CD.
+* **When Cooldown Ready** – first time the CD comes back up.
+* **When Buff Active** – eligible only if you (or pet) have a specific aura.
+* **When Not On GCD** – eligible only if nothing else just triggered (avoids double chatter on gcd-limited spam).
+
+And then *per action*:
+
+* Chance: 1-in-N.
+* Optional “only once per X seconds” throttle for that action.
+* Priority: which one wins if multiple configs are eligible in the same press.
+
+This gives you the ability to say:
+
+* Kill Command:
+
+  * Trigger: `ON_CAST`
+  * Priority: 10
+* Dash:
+
+  * Trigger: `ON_CD_START`
+  * Priority: 5
+
+So in your macro:
+
+```txt
+/run PE.Say("spell", 259489)  -- KC
+/run PE.Say("spell", 61684)   -- Dash
+/cast Kill Command
+```
+
+Logic per press:
+
+1. KC call runs first. If:
+
+   * KC is on CD → condition fails, *no speak, no lock*.
+   * KC is ready → condition passes; roll chance:
+
+     * If success → speak, lock this press.
+     * If fail → no speak, but also no lock (so lower-priority stuff can try).
+2. Dash call runs:
+
+   * If global lock already set → do nothing.
+   * Else, check `ON_CD_START` for Dash:
+
+     * If this was the keypress where Dash just went on CD, and its chance passes → speak, lock.
+
+That gives you basically what you described.
+
+---
+
+## 4. “One-stop” Action & Macro Studio
+
+Now the juicy part: “I want to build the macro and bind phrases / conditions all from one screen.”
+
+Yup, this is absolutely doable *within Blizzard’s rules* if we’re careful.
+
+We can treat it like this:
+
+### Concept: Action + Macro profile per spell/item/emote
+
+For each action (spell/item/emote) you configure:
+
+* Phrases + trigger + chance + channels
+* **Preferred macro template** (the snippet we suggest)
+
+The UI you already have is 80% of this. We add:
+
+* A “Macro Name” field.
+* A “Save as Macro” button.
+
+Pressing that button:
+
+* Uses the official macro API (`CreateMacro`, `EditMacro`) to write/update a macro in your account’s macro list.
+* Body is whatever is in the macro snippet box:
+
+  * For KC:
+    `#showtooltip Kill Command`
+    `/run PE.Say("spell", 259489)`
+    `/cast Kill Command`
+* No automatic chat, just macro text.
+
+That makes the “Action Phrases & Macros” screen a true **macro studio**:
+
+* You pick the action.
+* Tune phrases, conditions, chance.
+* Adjust the macro text (add other abilities, trinkets, items, etc.).
+* Hit “Save as Macro”.
+
+### Dragging macros onto bars without tainting reality
+
+We cannot safely create new secure action buttons on your own frames and drag them around.
+But we *can* use the existing macro system:
+
+* When you click some “Pick Up Macro” button next to an action:
+
+  * We call `PickupMacro(macroNameOrId)`.
+  * The cursor becomes that macro.
+  * You drop it onto any action bar slot like a normal macro.
+
+That’s hardware-event-safe and Blizzard-approved. Many addons do this.
+
+So the flow becomes:
+
+1. Open Persona → Action & Macro tab.
+2. Click Kill Command.
+3. Set phrases / triggers / chances.
+4. Hit “Save as Macro”.
+5. Hit “Pick Up Macro”.
+6. Drop it into your bar.
+
+Now this is truly a **macro manager for persona-aware macros**, without trying to replace the entire Blizzard macro UI.
+
+---
+
+## 5. Multi-say / multi-condition from the *editor*’s point of view
+
+You said:
+
+> “I want to be able to build a macro and bind phrases to different conditionals or even do multi-say type functionality… from the Action Phrases & Macros screen as a one-stop shop editor.”
+
+I’d structure it like this:
+
+* **Per action**, you can add multiple “rules”:
+
+  * Rule 1: On Cast (priority 10) → persona line set A.
+  * Rule 2: On CD Ready (priority 5) → persona line set B.
+  * Rule 3: On Press (priority 1) → goofy filler line set C.
+
+* Each rule:
+
+  * Trigger type
+  * Phrase key or inline phrase pool
+  * Chance
+  * Optional cooldown / throttle
+  * Optional “only in combat / only out of combat”
+
+Then the macro snippet doesn’t need multiple `/run` lines for the *same* action; you just have:
+
+```txt
+/run PE.Say("spell", 259489)
+/cast Kill Command
+```
+
+…and the **rule engine** inside `PE.Say` decides:
+
+* Which rule(s) are eligible this press.
+* Which one wins by priority.
+* Whether anything else in the same press has already spoken.
+
+For *cross-action* combos (Kill Command + Dash) you’d still chain multiple PE.Say calls, but the engine is smart enough to give you sane behavior with priorities and per-press locking.
+
+---
+
+## 6. Sanity check against your design goals
+
+* **No taint / no auto-chat**
+
+  * All speech still flows from `/run PE.Say(...)`.
+  * Listening to events for state is allowed; we just don’t speak on them.
+* **Macro-based personality**
+
+  * Actions are just config; macros are the only trigger surface.
+* **Emergent persona**
+
+  * Triggers + rules + chance + phases, not hardwired lines.
+* **One-stop shop**
+
+  * The Action Phrases & Macros panel becomes “Copporclang’s Workshop”: pick an action, tune his behavior, generate/update macro, pick it up and drop it on your bar.
+
+Once we agree on the shape of:
+
+* Trigger types,
+* Priority / per-press locking semantics,
+* How deep you want macro-management to go (just generate snippets vs full CreateMacro + PickupMacro flow),
+
+then we can carve it into Lua in a pretty straightforward way. This is very much in Phase-2½ territory: between “public persona” and “full Clippy-mode copilot”.

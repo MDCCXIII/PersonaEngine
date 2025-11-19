@@ -1,0 +1,11 @@
+<primary1|secondary><primary|secondary><primary><secondary><primary1>[state1|state2][state3][state1] I shall speak
+
+This should still be valid and would allow us to compile
+
+It would look like
+<primary1><primary|secondary><primary><secondary>[state1][state3] I shall speak
+
+Notice in our take <primary1> overrides <primary1|secondary>
+User said content and optimistic but then later said content, so we chopped the extra conditional since we will always allow when content mood no matter what secondary mood we may be in, also same thing happened with state1, user said fire this if we are in combat and on fire but we chop the extra because they later said in combat regardless of other state
+
+By allowing more than one <> or [] even if they are mixed e.g. <><>[]<>[] phrase this is fine and allows for multi-conditioning 

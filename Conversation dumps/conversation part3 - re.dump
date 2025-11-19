@@ -1,0 +1,242 @@
+Nice, now we’re designing Copporclang’s **micro language**.
+
+You want:
+
+* Users to write **arbitrarily complex sentence structures**.
+* A **strict, simple rule** so the engine can parse it.
+* **Validation on save** so bad syntax gets caught early, not at 3 AM in a Mythic+.
+
+Let’s lock down the “grammar” for these dynamic phrase blocks.
+
+---
+
+## 1. Core rule: one template line + key/value lines
+
+A **dynamic phrase block** in the phrase box looks like this:
+
+```text
+({must}{match})
+must=you seem, i'm, he's, she's, they are
+match=bored
+```
+
+Conceptually:
+
+* First line = **sentence format line** (template).
+* Following lines = **key dictionaries** (`key=option1, option2, option3`).
+* The engine will **randomly pick** one value for each `{key}` and splice it into the template.
+
+You can put **any text you like** in the template between and around the `{keys}`:
+
+```text
+({subject} {mood} about {topic}, and {conclusion}.)
+subject=you, i, my pet, my turret network, these goblins
+mood=seem, are suspiciously, are unreasonably, are statistically
+topic=this situation, our odds, my repair bill, the loot distribution
+conclusion=i hate it, i'm not convinced, this will be hilarious, this will end badly
+```
+
+The only rigid parts are:
+
+* Template must start with `(` and end with `)` on that line.
+* Placeholders are **curly-brace identifiers**: `{must}`, `{match}`, `{subject}`, etc.
+* Each placeholder name must have a matching `key=...` line below.
+
+---
+
+## 2. What we’ll enforce on save
+
+When the user hits **Save**, we run a parser over each line. For each dynamic block:
+
+### 2.1. Sentence format line rules
+
+* Line must:
+
+  * Start with `(` and end with `)` on the same line.
+
+    * If not: **hard error** like
+
+      > `Dynamic phrase error: template line must start with "(" and end with ")".`
+* Inside the parentheses: arbitrary text is allowed.
+* Placeholders must match this pattern:
+
+  * `{identifier}` where `identifier` = `[A-Za-z_][A-Za-z0-9_]*`
+* If we see malformed bits like `{foo` or `foo}` or `{1bad}`:
+
+  * **hard error**:
+
+    > `Dynamic phrase error: invalid placeholder "{1bad}". Use letters/numbers/underscores, starting with a letter or underscore.`
+
+We collect the set of **required keys** from all `{key}` placeholders.
+
+Example valid format line:
+
+```text
+({must}{match})
+({subject} {verb} {object} {ending})
+(If {condition}, then {consequence}.)
+```
+
+All good, as long as each `{key}` has a definition.
+
+---
+
+### 2.2. Key/value line rules
+
+For each subsequent non-empty line in the **same block**:
+
+* Must be of the form: `key=value1, value2, value3`
+
+  * Exactly one `=` (first one splits key vs values).
+* `key` must:
+
+  * Match the same identifier rule `[A-Za-z_][A-Za-z0-9_]*`
+* RHS (values):
+
+  * Split by commas.
+  * Trim whitespace.
+  * Empty values are ignored; if all values are empty, it’s an error.
+
+Errors we’ll throw:
+
+* If the line has no `=`:
+
+  > `Dynamic phrase error: expected "key=value1, value2" on line X.`
+* If the key is malformed:
+
+  > `Dynamic phrase error: invalid key "2badkey" on line X.`
+* If there are no usable values:
+
+  > `Dynamic phrase error: key "must" has no values (line X).`
+
+---
+
+### 2.3. Cross-check: template vs keys
+
+After we parse the block:
+
+* For each placeholder `{key}` in the template:
+
+  * If `key` has **no definition** below → **hard error**:
+
+    > `Dynamic phrase error: template uses "{must}" but no "must=..." line is defined.`
+
+* For each defined key `foo` that never appears in `{foo}`:
+
+  * That’s not fatal; we can:
+
+    * Either ignore silently, or
+    * Show a **warning**, not an error:
+
+      > `Warning: key "extra" has values defined but is not used in the template.`
+      > (I’d lean warning in a debug log, not blocking save.)
+
+If any **hard error** exists in the whole phrase box, we **reject the save** and show a list in the error frame or under the editor.
+
+---
+
+## 3. Multiple blocks + normal phrases in one field
+
+The nice thing about this format is it plays nicely with “normal” lines.
+
+You can mix:
+
+```text
+I have a bad feeling about this.
+({must}{match})
+must=you seem, i'm, he's, she's, they are
+match=bored
+
+({subject} are {adjective} than advertised.)
+subject=my devices, my inventions, my blueprints
+adjective=more volatile, more expensive, less legal, more combustible
+```
+
+Rules:
+
+* Any line that **starts with `(`** and contains **at least one `{key}`** is treated as the start of a dynamic block.
+* All subsequent `key=value` lines (until a blank line or next template) belong to that block.
+* All other non-template lines are treated as **literal phrases**.
+
+So a phrase bucket can contain:
+
+* Pure static lines.
+* One or many dynamic blocks.
+* The engine just considers each block as one “generator” when picking a random phrase.
+
+---
+
+## 4. How it expands at runtime
+
+When we select a **dynamic block** to speak:
+
+1. Template string is the line inside the parentheses.
+2. For each `{key}` encountered in the template (in any order):
+
+   * Look up the value list for that key.
+   * Pick a random entry.
+   * Substitute text.
+3. Emit the final string.
+
+Example with your rule:
+
+```text
+Template: ({must}{match})
+must=you seem, i'm, he's, she's, they are
+match=bored
+```
+
+Possible outputs:
+
+* `you seembored` → which looks janky, so the user probably wants a space in `match` or `must` values:
+
+Better authoring:
+
+```text
+({must} {match}.)
+must=you seem, i'm, he's, she's, they are
+match=bored, tired of this, over it
+```
+
+Outputs:
+
+* `you seem bored.`
+* `i'm over it.`
+* `they are tired of this.`
+
+We’re not forcing spaces or punctuation – the **author is in full control**. If they want eldritch grammar, the engine happily obeys.
+
+---
+
+## 5. How this fits with moods & actions
+
+Each phrase bucket is already scoped to:
+
+* An **action** (spell/item/emote/etc).
+* Optional **mood / outlook** filters.
+
+Dynamic blocks simply live **inside** those buckets. So you can do:
+
+```text
+-- For action: Kill Command, mood: Joyful, outlook: Idealistic
+
+({subject} {verb} {target} in the name of {ideal}!)
+subject=My pets, My machines, These explosives
+verb=shall liberate, are improving, are testing, are optimizing
+target=these fools, your problems, our enemies, the local ecosystem
+ideal=progress, science, profit, unnecessary cruelty, adequate loot distribution
+```
+
+When mood resolver says “Joyful + Idealistic” and the action matches Kill Command, this template is in the candidate pool; we randomly assemble it, and out comes some unhinged engineering sermon.
+
+---
+
+## 6. Safety net: “no code but strict rules”
+
+Everything you want is achievable while letting users go wild:
+
+* Arbitrarily complex sentences, nested clauses, whatever – **template line is just text with tokens**.
+* Strict, deterministic **syntax rules** so we can validate on save.
+* Clear, actionable **error messages** instead of “nothing came out, shrug”.
+
+Once this format is wired into the config UI and phrase engine, Copporclang’s mouth basically becomes a tiny templating engine that players can abuse creatively, which feels exactly on brand for a gnome with too much time and not enough safety regulations.

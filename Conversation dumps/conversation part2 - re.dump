@@ -1,0 +1,308 @@
+Nice. We’re designing Copporclang’s emotional CPU.
+
+Let’s formalize what you just described into something we can actually drive the persona with.
+
+---
+
+## 1. Two mood axes: Emotion & Outlook
+
+You’ve basically defined a 2D mood space:
+
+**Primary (Emotion):**
+
+-3 Furious
+-2 Irritated
+-1 Frustrated
+0 Calm
++1 Content
++2 Joyful
++3 Elated
+
+**Secondary (Outlook):**
+
+-3 Disillusioned
+-2 Pessimistic
+-1 Skeptical
+0 Realistic
++1 Hopeful
++2 Optimistic
++3 Idealistic
+
+Internally, we can think of it like this:
+
+* `emotion_value` ∈ [-1, +1]
+* `outlook_value` ∈ [-1, +1]
+
+And the 7 labels on each axis are **bins** / zones along that line (not just 7 discrete points). You also have:
+
+* A **preferred emotion** (bias) chosen by the player.
+* A **preferred outlook** (bias) chosen by the player.
+
+Those biases define where the character “wants” to rest most of the time.
+
+---
+
+## 2. Bias stretching: making one mood bigger without breaking the scale
+
+Your idea: “each base mood has equal length, but picking a bias stretches that mood and shrinks others as you move away from it.”
+
+Instead of literally warping the scale geometry (which gets messy), we can do this:
+
+* Each mood has an **index**: -3..+3.
+* The bias mood has index `b`.
+* We define a **preference weight** for each mood based on how far its index is from `b`.
+
+Something like:
+
+* `distance = abs(i - b)`
+* `preference_weight = max(0, 1 - distance / 3) ^ k` (k controls how “sharp” the bias is)
+
+Result:
+
+* The bias mood (distance 0) gets weight 1.
+* Adjacent moods get something like 0.66, then ~0.33, etc.
+* The further away, the smaller the weight.
+
+You can do the same for **outlook** separately.
+
+So:
+
+* The **scale [-1, +1] stays the same length**.
+* But when we map the numeric mood to a word, and when we decide what kind of phrase to pick, we factor in the *weights* so the biased moods are more likely.
+
+> “Lengthening the segment” becomes “boosting that mood’s chance to be chosen”.
+
+---
+
+## 3. Base state, events, and “time heals all”
+
+Per character, per session, we track:
+
+* `emotion_value` in [-1, +1]
+* `outlook_value` in [-1, +1]
+
+We also know the **bias center** for each axis:
+
+* `emotion_bias` (e.g. “Content” → slightly > 0)
+* `outlook_bias` (e.g. “Optimistic” → > 0)
+
+### Start state
+
+> “Character always starts out on a value that is middle of their bias mood.”
+
+So if bias = “Content”, that’s somewhere around +0.4 on the emotion line; that’s the spawn position.
+
+Same for outlook (e.g. “Hopeful” → +0.3).
+
+### Events
+
+Every “thing that happens” gives a **delta** on one or both axes:
+
+* Getting crit by a boss: emotion -0.2, outlook -0.05
+* Landing a big crit: emotion +0.15
+* Completing a quest chain: emotion +0.1, outlook +0.2
+* Wiping repeatedly: emotion -0.15, outlook -0.15
+
+You can also add **multipliers** based on stats:
+
+* “Resilience” → reduces negative deltas.
+* “Cheerfulness” → amplifies positive deltas.
+* “Stoicism” → overall dampening; mood doesn’t move as much.
+
+So:
+
+```text
+delta = base_event_value * (1 +/- stat_modifiers)
+new_value = clamp(-1, +1, current_value + delta)
+```
+
+### Time decay (de-escalation)
+
+> “Time will always degrade at a base speed.”
+
+Each tick / second (or more coarsely), we pull the mood back toward its bias:
+
+* `emotion_value += (emotion_bias - emotion_value) * decay_rate * dt`
+* `outlook_value += (outlook_bias - outlook_value) * decay_rate * dt`
+
+So:
+
+* If nothing happens, he drifts back to “generally content and hopeful”, or “generally irritated and skeptical”, etc.
+* Fast back-and-forth events still move him around, but the decay smooths the oscillations.
+
+You can later add:
+
+* Extra decay when mood is near extremes (the brain tires out).
+* Slightly slower decay when a stat says “brooding” or “obsessive”.
+
+---
+
+## 4. Mapping number → specific mood label
+
+When we need a **label** (for phrase-choice):
+
+1. Convert the current numeric value to an approximate index -3..+3.
+2. Blend that with the **bias weights** to nudge toward the preferred mood.
+
+Example:
+
+* `emotion_value = 0.6` (pretty positive)
+* Raw closest label: between Joyful (+2) and Elated (+3).
+* But bias is “Content” (+1) → we reduce chance of Elated a bit, increase chance of Content/Joyful.
+
+So for phrase selection we’d say:
+
+* Candidate moods: Content, Joyful, Elated.
+* Weights from:
+
+  * numeric proximity
+
+  - bias preference.
+* Draw one randomly according to those weights → that’s the **active mood** for this line.
+
+Repeat the same for outlook.
+
+So at any moment, Copporclang has:
+
+* A **numeric state** (used for physics of mood).
+* A **discrete mood+outlook combo** (used to pick phrases).
+
+---
+
+## 5. Mood → which phrase bucket?
+
+Now we plug this into PersonaEngine.
+
+For any action (spell/item/emote), instead of just:
+
+> “These are the lines for Kill Command.”
+
+You’d have:
+
+* `Kill Command` phrases, organized by **mood & outlook**.
+
+Example for `Kill Command`:
+
+* Furious + Disillusioned → “Fine. Let’s delete them from the equation.”
+* Frustrated + Skeptical → “Again? I’m starting to suspect user error.”
+* Content + Realistic → “Calculating optimal dog-based disassembly perimeter.”
+* Joyful + Hopeful → “Look at him go! That’s my little murder Roomba!”
+* Elated + Idealistic → “Justice by teeth and sprockets! Beautiful!”
+
+So when `PE.Say("spell", 259489)` fires:
+
+1. We compute the current primary mood & outlook (as above).
+2. Look for phrase pools bound to that **(action, primary, secondary)** combo.
+3. If none exist, fall back gracefully:
+
+   * Same action + primary only.
+   * Same action + any mood.
+   * Global fallback mood bucket.
+
+From the configuration UI:
+
+* A phrase entry would have optional fields:
+
+  * “Primary mood filter” (one of 7, or “Any”).
+  * “Outlook filter” (one of 7, or “Any”).
+
+Totally valid to say:
+
+> “These 3 lines apply to ‘irritated’ regardless of outlook.”
+
+or
+
+> “These lines are specifically for ‘joyful + idealistic’.”
+
+---
+
+## 6. Dynamic phrases with mini-grammar (the `{beginning}/{ending}` idea)
+
+You want users to be able to define structured, remixable phrases in the phrase box, like:
+
+```text
+({beginning} are of the {ending})
+-- example base phrase: My devices are of the utmost quality and craftsmanship!
+
+beginning=my devices, the gadgets I invent, my schematics, devices spawned from my nether regions
+ending=utmost quality and craftsmanship, utmost pain in my assmanship, crude yet informative type, most deadly in the universe
+```
+
+Conceptually, that’s a **template + dictionaries**.
+
+At save time, we can:
+
+1. Detect lines starting with `(` and containing `{token}` → that’s your template:
+
+   * Template ID can be implicitly generated per action/mood, or by position/order.
+2. For each line of form `name=...`, split by commas to make variants:
+
+   * `beginning` → list of strings.
+   * `ending` → list of strings.
+
+Then on speak:
+
+* Choose a random `beginning` string.
+* Choose a random `ending` string.
+* Substitute into the template:
+  `"({beginning} are of the {ending})"` → `"My devices are of the utmost quality and craftsmanship!"` or one of the unhinged variants.
+
+Bonus:
+
+* Those templates can be *per mood*:
+
+  * Same structure, but more unhinged values when Furious or Elated.
+* Or per action:
+
+  * Kill Command’s `{target}` dictionary is different from Explosive Shot’s.
+
+Under the hood it fits nicely into a “DynamicPhrase builder” keyed like:
+
+* `actionKey + mood + outlook → template + dictionaries`.
+
+At config time, the phrase text area is still simple:
+
+* Regular lines = literal phrases.
+* Lines with `({…})` + dictionary definitions below = a dynamic phrase block.
+
+---
+
+## 7. Putting it together in engine terms
+
+High-level pipeline for `PE.Say("spell", 259489)`:
+
+1. **State update**
+
+   * Apply “time heal” drift toward bias (emotion + outlook).
+   * (Optional: apply any immediate event deltas attached to this action.)
+
+2. **Trigger rules**
+
+   * Check “should we even consider speaking?” based on per-action trigger (On Cast, On CD Start, etc.).
+   * If not eligible → exit.
+
+3. **Mood resolution**
+
+   * From current `emotion_value`, pick primary mood label with bias-weighting.
+   * From `outlook_value`, pick outlook label the same way.
+
+4. **Phrase selection**
+
+   * Filter phrases bound to that action by primary+secondary mood filters.
+   * Prefer exact match, then partial, then global fallback.
+   * If a phrase bucket is dynamic (template + dictionaries), assemble on the fly.
+
+5. **Global gating**
+
+   * Check global “did we already speak this keypress / second / recent window?”
+   * Apply global cooldown / chance.
+
+6. **Emit line** (using current chat channel config, etc.)
+
+From your POV as the designer:
+
+* Mood system gives **flavor context**.
+* Triggers on actions tell **when** he’s allowed to talk.
+* Dynamic phrase blocks give **reusable speech patterns** without manually writing 200 lines.
+
+And now when Copporclang swings from furious/skeptical to elated/idealistic because the player just yo-yo’d their way through a dungeon, the same Kill Command macro can produce very different vibes without touching the macro itself.

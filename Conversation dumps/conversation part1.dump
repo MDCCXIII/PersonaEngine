@@ -1,0 +1,33 @@
+No Code yet, lets talk for a minute
+On the when should copporclang speak i want to repurpose this
+
+As the command is now bound to protected frames through macros
+
+On cast makes some sense to the context
+
+and in theory, let me paint an example
+Lets say this is my macro for kill command
+#showtooltip Kill Command
+/run PE.Say("spell", 259489)
+/cast Kill Command
+
+if i create another spell-phrases binding to a macro for Dash (pet ability)
+When Cooldown Starts
+Phrases: My machines come with rocket boosters!
+/run PE.Say("spell", 61684)
+
+and then combine the two say lines into kill command
+#showtooltip Kill Command
+/run PE.Say("spell", 259489)
+/run PE.Say("spell", 61684)
+/cast Kill Command
+
+then when the user presses the macro for kill command they have chance to say a phrase for kill command, but if that doesnt happen, or if the kill command is on CD then there is a check to see if dash is on CD  and a chance to say an entirely different line 
+
+same logic could be applied to When Cooldown ready.
+
+but i also think we could extend the list of when should copporclang speak, 
+
+the problem im having is i really want to be able to build a macro and bind phrases to different conditionals or even do multi-say type functionality in my example through the Action Phrases & macro's screen as a one stop shop /editor
+
+im also curious if we could get this to be a full on macro manger (maybe a pop-up menu showing icons of all the different spells we have bound, click the spell it loads the saved macro in the text, you can edit it or whatever save it, go back into the popup and drag macro's down to a bar/button directly from the config

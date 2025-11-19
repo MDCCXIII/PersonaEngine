@@ -1,0 +1,118 @@
+Yep, that’s exactly the right kind of “rude but honest” UX.
+
+If we’re going to let users specify all this expressive syntax, then on **Save** we shouldn’t just silently accept it — we should:
+
+1. **Parse + validate**
+2. **Canonicalize it (what the engine *actually* understands)**
+3. **Rewrite the phrase text to that canonical form**
+
+So the editor *shows* them how the engine interpreted their intent.
+
+If what they see after saving doesn’t match what they thought they wrote, that’s the red flag:
+“Wait… why did it drop `[burning]`?” → because your later `[combat]` overrode it.
+
+---
+
+### How that would look in practice
+
+Take your wild input:
+
+```text
+<content|optimistic><content><joyful>[combat|burning][combat][lowhp] I shall speak
+```
+
+On Save we:
+
+* Parse all tags.
+
+* Apply the override/relaxation rules we discussed.
+
+* End up with the *actual* condition:
+
+* Primary mood: `joyful`
+
+* Secondary: none (don’t care)
+
+* Required states: `combat`, `lowhp`
+
+So we **reformat the line in the editor to:**
+
+```text
+<joyful>[combat][lowhp] I shall speak
+```
+
+Now the user sees:
+
+* “Oh, content/optimistic didn’t ‘stack’. Joyful won.”
+* “Oh, burning isn’t required anymore — only combat + lowhp.”
+
+Same thing with your earlier example:
+
+```text
+<primary1|secondary><primary|secondary><primary><secondary><primary1>[state1|state2][state3][state1] I shall speak
+```
+
+Auto-formatted to:
+
+```text
+<primary1>[state1][state3] I shall speak
+```
+
+That’s the engine saying:
+
+> “Net effect: primary1, any secondary, and both state1 + state3. This is what I’ll actually use.”
+
+---
+
+### For dynamic templates with tags
+
+Same rule:
+
+User writes:
+
+```text
+(<joyful> [combat]{beginning}{ending})
+beginning=...
+ending=...
+```
+
+Maybe they mess around and end up with:
+
+```text
+(<joyful>[combat|lowhp][combat]{beginning}{ending})
+```
+
+We parse & canonicalize that to:
+
+* Mood filter: `joyful`
+* Game state: `combat` only (since `[combat]` overrides `[combat|lowhp]` in our rules)
+
+Then the editor on Save rewrites the template line to:
+
+```text
+(<joyful>[combat]{beginning}{ending})
+```
+
+Everything below (keys, values) stays as-is; we only normalize the header and fix obvious syntax issues.
+
+---
+
+### Why this is actually *good* friction
+
+It feels a bit “in your face” to rewrite the user’s text, but for this kind of mini-language it’s a feature:
+
+* It **prevents silent misinterpretation**.
+* It **teaches the mental model**: last tag wins, simpler constraint wins, etc.
+* It keeps the phrase field from turning into unread spaghetti after a few iterations.
+
+And as you said:
+
+> If the save format is not what they actually wanted, that’s their signal to fix it.
+
+Exactly. The editor becomes a mirror of the engine’s understanding, not just a dumb text box.
+
+Later we can even surface a tiny, non-blocking hint under the field like:
+
+> “Normalized tags to `<content>[combat][lowhp]` based on precedence rules.”
+
+But the big win is: **auto-format on save** guarantees that whatever is shown is what the engine will do. No hidden magic, no mood-gremlins.

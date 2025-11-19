@@ -1,0 +1,129 @@
+Yep, absolutely, a little “?” here is doing god’s work for future-you.
+
+Let’s treat that `?` as a **tiny spec** so when we get to wiring it in, we already know what it should say and how it behaves.
+
+---
+
+## Where it lives
+
+* Next to the **Phrases** multiline box label.
+* Or inside the frame top-right as a little `?` button.
+* Clicking it opens:
+
+  * Either a small tooltip-style frame, or
+  * A scrollable “Help” popup if we want full docs.
+
+---
+
+## What it should explain (short, readable, no lore dump)
+
+Here’s a compressed help text you can pretty much drop in as-is later:
+
+---
+
+### Phrase Rules Cheat Sheet
+
+**1. Simple phrases**
+
+* Each non-empty line = one possible thing Copporclang can say.
+* Example:
+  `I have a bad feeling about this.`
+
+---
+
+### 2. Mood & Game State Tags
+
+You can tag a line to only use it in certain moods or game states.
+
+* Format:
+  `(<tags>){optional template}` or
+  `<tags> Your phrase here`
+
+* Mood tags (optional):
+  `<furious> <irritated> <frustrated> <calm> <content> <joyful> <elated>`
+
+* State tags (optional):
+  `[combat] [noncombat] [boss] [trash] [solo] [group] [town] [lowhp] …`
+
+You can stack tags:
+
+```text
+<joyful>[combat] My gadgets are having fun.
+```
+
+**Multiple tags are allowed. Last one wins if they conflict.**
+Example:
+
+```text
+<content|optimistic><content> I shall speak
+```
+
+gets auto-formatted to:
+
+```text
+<content> I shall speak
+```
+
+because the later `<content>` overrides the more specific `<content|optimistic>`.
+
+---
+
+### 3. Dynamic Templates
+
+You can build mix-and-match sentences.
+
+**Template line:**
+
+* First line starts with `(` and ends with `)`:
+
+  ```text
+  (<joyful>[combat]{subject} {verb} {object}!)
+  ```
+
+* Inside you can use `{keys}` as placeholders.
+
+**Key/value lines:**
+
+* Each following line in the block:
+
+  ```text
+  subject=My devices, My inventions, My pet
+  verb=love testing, crave destruction
+  object=our enemies, this trash pack
+  ```
+
+On speak, the engine picks one random value for each `{key}` and replaces it.
+
+If the template uses a `{key}` with no matching `key=...` line, or has bad syntax, **save is blocked with an error.**
+
+---
+
+### 4. Auto-Formatting on Save
+
+When you press **Save**:
+
+* The addon:
+
+  * Validates syntax.
+  * Normalizes tags and template headers.
+  * Rewrites them into the **exact form it will actually use.**
+
+If what you see after saving looks different than what you typed, that means:
+
+* Some tags were simplified or overridden (e.g. redundant mood or state conditions).
+* There was a syntax fix / normalization.
+
+Treat the saved version as **the truth** of how Copporclang will behave.
+
+---
+
+That’s the core help text. Short, dense, but not “legalese.”
+
+Later, if you want to be extra fancy, the `?` button can open a slightly bigger panel with:
+
+* One “simple example”
+* One “tagged example”
+* One “dynamic example”
+* A tiny “Why did my line change when I saved?” section.
+
+For now, the important bit is: we’ve got the rules, we’ve got how we’ll normalize them, and the `?` button will tell players “This is not just a text box; this is tiny spell language for your gnome’s brain.”

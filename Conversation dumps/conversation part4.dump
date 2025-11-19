@@ -1,0 +1,6 @@
+One last thing we could allow users to
+
+(<mood> [gamestate]{key1}{key2})
+<mood>[gamestate] phrase
+Mood or gamestate completely optional and we could add autocomplete suggestions when user types < or [
+Then the id gets bound with that mood/gamestate choice

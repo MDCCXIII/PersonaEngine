@@ -1,0 +1,193 @@
+Yep, this totally works – *as long as we’re clear what “wins” when tags pile up like spaghetti.*
+
+You basically want:
+
+* Multiple `<...>` mood tags allowed.
+* Multiple `[...]` state tags allowed.
+* Some of them may be “more specific” (`<primary1|secondary>`) and some “more general” (`<primary1>`).
+* Later tags can override / simplify earlier ones so the engine can compile to a **minimal set of conditions**.
+
+Let’s turn that into rules.
+
+---
+
+## 1. What the user is allowed to write
+
+You want things like:
+
+```text
+<primary1|secondary><primary|secondary><primary><secondary><primary1>[state1|state2][state3][state1] I shall speak
+```
+
+And this is “valid” input.
+
+The idea is:
+
+* `<primary1|secondary>` → “fire when mood is primary1 AND secondary”
+* `<primary>`           → “fire when mood is primary1 regardless of secondary”
+* `[state1|state2]`     → “fire when both state1 AND state2 are true”
+* `[state1]`            → “fire when state1 is true regardless of state2”
+
+Then at **compile time**, we simplify.
+
+---
+
+## 2. How compilation works (conceptually)
+
+We’ll treat tags as **constraints on dimensions**:
+
+* Primary mood axis (emotion)
+* Secondary mood axis (outlook)
+* Game state flags (combat, boss, town, lowhp, etc.)
+
+We scan the line left → right, collecting constraints, and then we clean them up.
+
+### 2.1. Mood tags `<...>`
+
+Each `<...>` can contain:
+
+* A primary mood alone: `<content>`
+* A secondary mood alone: `<optimistic>`
+* Both combined: `<content|optimistic>`
+
+**Compilation rules:**
+
+* **We separate primary and secondary constraints.**
+
+  * `<content|optimistic>` is just “primary=content” and “secondary=optimistic”.
+
+* For each axis (primary, secondary), **later tags override earlier tags**:
+
+  * `<content|optimistic><content>` → resolves to:
+
+    * primary = `content`
+    * secondary = `optimistic` (unless later overridden)
+  * If later you write `<optimistic>` (for outlook), that overrides the secondary part.
+
+* If a later tag is *strictly more general* than an earlier one on that axis, we drop the stricter one from the “canonical” rendering.
+
+Your example narrative:
+
+> User said content and optimistic (`<content|optimistic>`)
+> Then later said content (`<content>`).
+> So we chop the extra conditional: we’ll always allow when content, no matter what secondary mood.
+
+So final **canonical mood condition** is just:
+
+```text
+<content>    (primary-only filter)
+```
+
+Even though internally we know “ok optimistic was mentioned earlier, but content alone is enough.”
+
+If they also wrote `<optimistic>` later, we’d end up with:
+
+```text
+<content><optimistic>
+```
+
+– i.e. “content AND optimistic” as separate axis constraints.
+
+### 2.2. State tags `[...]`
+
+Same idea, but on “flags” instead of two axes.
+
+Each `[...]` can contain one or more states:
+
+* `[combat]`
+* `[burning]`
+* `[combat|burning]`
+* `[state1|state2]`
+
+You want:
+
+```text
+[state1|state2][state3][state1]
+```
+
+to compile to:
+
+```text
+[state1][state3]
+```
+
+because the last `[state1]` says:
+
+> “I only care that we’re in state1 now. That earlier ‘state1 AND state2’ thing is too strict; override it.”
+
+Conceptually:
+
+* We maintain a set of required states.
+* But we also allow a **later bracket to “relax”** previous requirements for some states.
+
+One way to think of it:
+
+* `[state1|state2]` → “require `state1=true` AND `state2=true`”
+* `[state3]`        → “also require `state3=true`”
+* `[state1]`        → “change the state1 requirement to ‘state1=true, regardless of state2’”
+
+So final compiled requirements:
+
+* state1 must be true
+* state3 must be true
+* state2 is no longer required.
+
+Hence the canonical tag set:
+
+```text
+[state1][state3]
+```
+
+---
+
+## 3. Multi-conditioning still totally allowed
+
+Your last line is the important design requirement:
+
+> “By allowing more than one <> or [] even if they are mixed e.g. `<><>[]<>[] phrase` this is fine and allows for multi-conditioning.”
+
+Yup:
+
+* Every **axis** (primary, secondary) and every **state flag** can have conditions.
+* Multiple tags just **tighten or relax** those conditions.
+* The compile step just reduces redundant or overridden ones so:
+
+  ```text
+  <content|optimistic><content><joyful>[combat|burning][combat][lowhp] phrase
+  ```
+
+  might end up canonically as:
+
+  ```text
+  <joyful>[combat][lowhp] phrase
+  ```
+
+  if we decide:
+
+  * Last primary tag (`<joyful>`) wins for primary.
+  * No explicit secondary tag survives (so outlook is “don’t care” here).
+  * For states: `[combat]` overrides the “combat+burning” part, but `[lowhp]` remains a separate constraint.
+
+At runtime, the engine just checks:
+
+* primary mood == joyful?
+* gamestate has `combat=true` and `lowhp=true`?
+
+If yes → this line is eligible. If not → we skip it.
+
+---
+
+## 4. Where this leaves us
+
+So the full rule-set for tags is:
+
+* You can stack **as many `<...>` and `[...]` prefixes as you want**.
+* They can be in any order: `<><>[]<>[] phrase` is fine.
+* The compiler:
+
+  * Splits mood tags into primary/secondary constraints.
+  * Splits state tags into individual flags.
+  * Processes them left-to-right, letting **later tags override or relax** earlier ones on the same dimension/flag.
+  * Emits a **minimal canonical set of tags** that express the final condition.
+
+That gives users freedom to “change their mind” in a single line without making the engine confused, and it gives you a deterministic way to turn whatever they typed into a clean, evaluatable condition.
