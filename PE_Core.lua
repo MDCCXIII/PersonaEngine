@@ -317,41 +317,45 @@ local function PE_SpeakLiteral(text, spec)
     })
 end
 
--- 4) Spell bubble helper (used by FireBubble and Speak)
-local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
-    if not spellID then
-        return
-    end
-    if not PersonaEngineDB or not PersonaEngineDB.spells then
-        return
+----------------------------------------------------
+-- 4) Action bubble helper (spell / item / emote)
+--    used by FireBubble, Speak, and PE.Say
+----------------------------------------------------
+local function PE_SpeakActionBubble(kind, id, isReactionOverride, explicitCfg)
+    if not kind or not id then return end
+    if not PersonaEngineDB then return end
+
+    -- normalize kind to lower
+    if type(kind) == "string" then
+        kind = string.lower(kind)
     end
 
-    local cfg = explicitCfg or PersonaEngineDB.spells[spellID]
-    if not cfg then
-        return
+    local cfg = explicitCfg
+
+    -- Preferred: new actions DB
+    if not cfg and PersonaEngineDB.actions and PE.MakeActionKey then
+        local key = PE.MakeActionKey(kind, id)
+        cfg = PersonaEngineDB.actions[key]
     end
 
-    if not PE.CanSpeak(cfg) then
-        return
+    -- Legacy fallback: old spell table if this is a spell
+    if not cfg and kind == "spell" and PersonaEngineDB.spells then
+        cfg = PersonaEngineDB.spells[id]
     end
+
+    if not cfg then return end
+    if not PE.CanSpeak(cfg) then return end
 
     local chance = cfg.chance or 10
-    if chance < 1 then
-        chance = 1
-    end
-    if math.random(chance) ~= 1 then
-        return
-    end
+    if chance < 1 then chance = 1 end
+    if math.random(chance) ~= 1 then return end
 
     -- Channel selection (prefer SAY/YELL/EMOTE; then first enabled)
     local channel = "SAY"
     if cfg.channels and next(cfg.channels) then
-        if cfg.channels.SAY then
-            channel = "SAY"
-        elseif cfg.channels.YELL then
-            channel = "YELL"
-        elseif cfg.channels.EMOTE then
-            channel = "EMOTE"
+        if cfg.channels.SAY   then channel = "SAY"
+        elseif cfg.channels.YELL  then channel = "YELL"
+        elseif cfg.channels.EMOTE then channel = "EMOTE"
         else
             for ch, on in pairs(cfg.channels) do
                 if on then
@@ -364,45 +368,46 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
 
     -- Context
     local baseCtx = cfg.ctx or {}
-    local ctx     = {}
+    local ctx = {}
     for k, v in pairs(baseCtx) do
         ctx[k] = v
     end
 
     local stateId = PE_GetMacroState and PE_GetMacroState() or "idle"
-    ctx.stateId   = stateId
-    ctx.spellID   = spellID
-    ctx.spellCfg  = cfg
+    ctx.stateId    = stateId
+    ctx.actionKind = kind
+    ctx.actionId   = id
 
-    local eventId = cfg.eventId or ("BUBBLE_" .. tostring(spellID))
+    if kind == "spell" then
+        ctx.spellID = id
+    elseif kind == "item" then
+        ctx.itemID = id
+    elseif kind == "emote" then
+        ctx.emoteToken = id
+    end
+
+    local eventId = cfg.eventId or ("BUBBLE_" .. tostring(kind) .. "_" .. tostring(id))
 
     local line
     if cfg.phraseKey and PE.Phrases and PE.Phrases.PickLine then
         line = PE.Phrases.PickLine(cfg.phraseKey, ctx, stateId, eventId)
     else
         local phrases = cfg.phrases
-        if not phrases or #phrases == 0 then
-            return
-        end
+        if not phrases or #phrases == 0 then return end
         line = PE_SelectLine(phrases)
     end
 
-    if not line or line == "" then
-        return
-    end
+    if not line or line == "" then return end
 
     ------------------------------------------------
     -- Action vs reaction (optional delay)
     ------------------------------------------------
     local delay = 0
-
     if isReactionOverride == true then
         -- Forced reaction
         local minD = cfg.reactionDelayMin or 1.0
         local maxD = cfg.reactionDelayMax or 2.5
-        if maxD < minD then
-            maxD = minD
-        end
+        if maxD < minD then maxD = minD end
         delay = minD + math.random() * (maxD - minD)
     elseif isReactionOverride == false then
         delay = 0
@@ -412,25 +417,54 @@ local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
         if rc > 0 and math.random() < rc then
             local minD = cfg.reactionDelayMin or 1.0
             local maxD = cfg.reactionDelayMax or 2.5
-            if maxD < minD then
-                maxD = minD
-            end
+            if maxD < minD then maxD = minD end
             delay = minD + math.random() * (maxD - minD)
         end
     end
 
-    -- FireBubble bypasses resolver (macros can choose SAY/YELL/etc.)
+    -- Macros can choose SAY/YELL/etc.; bypass resolver
     PE_SchedulePersonaMessage(
         line,
         channel,
         {
-            cfg           = cfg,
+            cfg          = cfg,
             bypassResolve = true,
-            eventId       = eventId,
-            ctx           = ctx,
+            eventId      = eventId,
+            ctx          = ctx,
         },
         delay
     )
+end
+
+-- Spell-only wrapper, used by PE.Speak and legacy FireBubble
+local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
+    if not spellID then return end
+    return PE_SpeakActionBubble("spell", spellID, isReactionOverride, explicitCfg)
+end
+
+----------------------------------------------------
+-- Short macro helper: PE.Say(...)
+-- Usage:
+--   /run PE.Say("spell", 34026)
+--   /run PE.Say("item", 5512)
+--   /run PE.Say("emote", "wave")
+-- Legacy:
+--   /run PE.Say(34026[, true])  -- spellID, optional reaction override
+----------------------------------------------------
+function PE.Say(a, b, c)
+    local t = type(a)
+
+    -- Legacy: PE.Say(spellID[, isReactionOverride])
+    if t == "number" then
+        return PE_SpeakSpellBubble(a, b, nil)
+    end
+
+    -- New style: PE.Say(kind, id[, isReactionOverride])
+    if t == "string" and b ~= nil then
+        return PE_SpeakActionBubble(a, b, c, nil)
+    end
+
+    -- Garbage in: do nothing
 end
 
 ----------------------------------------------------

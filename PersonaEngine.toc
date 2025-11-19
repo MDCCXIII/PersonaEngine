@@ -11,6 +11,7 @@
 # Core namespace + logging
 PE_Globals.lua
 PE_Core.lua
+PE_Actions.lua
 PE_NPCMemory.lua
 
 # Visuals / icons

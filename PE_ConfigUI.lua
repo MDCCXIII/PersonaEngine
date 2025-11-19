@@ -246,7 +246,7 @@ local function BuildConfigFrame()
 
     local spellLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     spellLabel:SetPoint("TOPLEFT", actionPage, "TOPLEFT", 8, -4)
-    spellLabel:SetText("Spell name or ID:")
+    spellLabel:SetText("Action name or ID:")
     StyleText(spellLabel, "LABEL")
 
     local spellEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
@@ -274,35 +274,43 @@ local function BuildConfigFrame()
     spellInfoText:SetJustifyH("LEFT")
     StyleText(spellInfoText, "HINT")
 
-    local currentSpellID
+    local currentAction -- { kind, id, name, icon }
 
-    local function LoadSpellByInput()
-        if not PE.GetOrCreateSpellConfig then
-            spellInfoText:SetText("|cffff2020Spell config system not ready.|r")
+    local function LoadActionByInput()
+        if not PE.GetOrCreateActionConfig then
+            spellInfoText:SetText("|cffff2020Action config system not ready.|r")
             return
         end
 
         local txt = spellEdit:GetText()
         if not txt or txt == "" then
-            spellInfoText:SetText("|cffff2020No spell provided.|r")
+            spellInfoText:SetText("|cffff2020No action provided.|r")
             spellIcon:SetTexture(nil)
-            currentSpellID = nil
+            currentAction = nil
             return
         end
 
-        local name, icon, spellID = GetSpellInfoByInput(txt)
-        if not name then
-            spellInfoText:SetText("|cffff2020Unknown spell.|r")
+        local action = GetActionByInput(txt)
+        if not action then
+            spellInfoText:SetText("|cffff2020Unknown spell/item/emote.|r")
             spellIcon:SetTexture(nil)
-            currentSpellID = nil
+            currentAction = nil
             return
         end
 
-        currentSpellID = spellID
-        spellIcon:SetTexture(icon)
-        spellInfoText:SetText(string.format("Configuring |cffffff00%s|r (ID %d)", name, spellID))
+        currentAction = action
+        spellIcon:SetTexture(action.icon or nil)
 
-        local cfg = PE.GetOrCreateSpellConfig(spellID)
+        local summary = PE.FormatActionSummary and PE.FormatActionSummary(action)
+            or string.format("Configuring |cffffff00%s|r (%s:%s)",
+                             tostring(action.name or "?"),
+                             tostring(action.kind or "?"),
+                             tostring(action.id or "?"))
+
+        spellInfoText:SetText(summary)
+
+        -- Pull config from DB
+        local cfg = PE.GetOrCreateActionConfig(action.kind, action.id)
 
         -- Trigger dropdown
         local triggerModes = PE.TRIGGER_MODES or {
@@ -343,17 +351,46 @@ local function BuildConfigFrame()
         end
         configFrame.phraseEdit:SetText(buf)
 
-        -- Macro snippet
+        -- Macro snippet, using PE.Say
         if configFrame.macroEdit then
-            local macroText = string.format(
-                "#showtooltip %s\n/run PE.FireBubble(%d)\n/cast %s",
-                name, spellID, name
-            )
+            local macroText
+
+            if action.kind == "spell" then
+                macroText = string.format(
+                    "#showtooltip %s\n" ..
+                    "/run PE.Say(\"spell\", %d)\n" ..
+                    "/cast %s",
+                    action.name, action.id, action.name
+                )
+            elseif action.kind == "item" then
+                macroText = string.format(
+                    "#showtooltip item:%d\n" ..
+                    "/use item:%d\n" ..
+                    "/run PE.Say(\"item\", %d)",
+                    action.id, action.id, action.id
+                )
+            elseif action.kind == "emote" then
+                macroText = string.format(
+                    "/e %s\n" ..
+                    "/run PE.Say(\"emote\", \"%s\")",
+                    action.name, action.name
+                )
+            else
+                -- Fallback: treat as spellish
+                macroText = string.format(
+                    "#showtooltip %s\n" ..
+                    "/run PE.Say(\"%s\", %s)\n",
+                    tostring(action.name or "?"),
+                    tostring(action.kind or "spell"),
+                    tostring(action.id or "?")
+                )
+            end
+
             configFrame.macroEdit:SetText(macroText)
         end
     end
 
-    loadButton:SetScript("OnClick", LoadSpellByInput)
+    loadButton:SetScript("OnClick", LoadActionByInput)
 
     ------------------------------------------------
     -- Trigger dropdown
@@ -641,24 +678,22 @@ local function BuildConfigFrame()
 	
 	
 
-    ------------------------------------------------
+    --------------------------------------------------
     -- Save button (bottom-left)
-    ------------------------------------------------
-
+    --------------------------------------------------
     local function SaveCurrentConfig()
-        if not currentSpellID then
-            spellInfoText:SetText("|cffff2020Pick a valid spell first.|r")
+        if not currentAction then
+            spellInfoText:SetText("|cffff2020Pick a valid action first.|r")
+            return
+        end
+        if not PE.GetOrCreateActionConfig then
+            spellInfoText:SetText("|cffff2020Action config system not ready.|r")
             return
         end
 
-        if not PE.GetOrCreateSpellConfig then
-            spellInfoText:SetText("|cffff2020Spell config system not ready.|r")
-            return
-        end
-
-        local cfg = PE.GetOrCreateSpellConfig(currentSpellID)
+        local cfg = PE.GetOrCreateActionConfig(currentAction.kind, currentAction.id)
         if not cfg then
-            spellInfoText:SetText("|cffff2020Failed to get config for spell.|r")
+            spellInfoText:SetText("|cffff2020Failed to get config for action.|r")
             return
         end
 
@@ -698,8 +733,10 @@ local function BuildConfigFrame()
         end
 
         -- Visual confirmation
-        spellInfoText:SetText((spellInfoText:GetText() or "") .. " |cff20ff20Saved.|r")
+        spellInfoText:SetText((spellInfoText:GetText() or "") ..
+            " |cff20ff20Saved.|r")
     end
+
 
     local saveButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
     saveButton:SetSize(120, 24)
