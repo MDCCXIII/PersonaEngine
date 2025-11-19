@@ -325,17 +325,18 @@ local function BuildConfigFrame()
         local cfg = PE.GetOrCreateActionConfig(action.kind, action.id)
 
         -- Trigger dropdown
-        local triggerModes = PE.TRIGGER_MODES or {
-            ON_CAST  = "On Cast",
-            ON_READY = "When Cooldown Ready",
-            ON_CD    = "When Cooldown Starts",
-        }
+		local triggerModes = PE.TRIGGER_MODES or {
+			ON_PRESS = "On Button Press",
+			ON_CAST  = "On Cast",
+			ON_READY = "When Cooldown Ready",
+			ON_CD    = "When Cooldown Starts",
+		}
+		UIDropDownMenu_SetSelectedValue(configFrame.triggerDrop, cfg.trigger)
+		UIDropDownMenu_SetText(
+			configFrame.triggerDrop,
+			triggerModes[cfg.trigger] or triggerModes.ON_CAST or "On Cast"
+		)
 
-        UIDropDownMenu_SetSelectedValue(configFrame.triggerDrop, cfg.trigger)
-        UIDropDownMenu_SetText(
-            configFrame.triggerDrop,
-            triggerModes[cfg.trigger] or "On Cast"
-        )
 
         -- Chance
         configFrame.chanceEdit:SetNumber(cfg.chance or 10)
@@ -415,34 +416,78 @@ local function BuildConfigFrame()
 
     local triggerDrop = CreateFrame("Frame", "PersonaEngineTriggerDrop", actionPage, "UIDropDownMenuTemplate")
     triggerDrop:SetPoint("LEFT", triggerLabel, "RIGHT", -10, -4)
+	
+	-- Small "?" help button explaining trigger modes
+	local triggerHelp = CreateFrame("Button", nil, actionPage)
+	triggerHelp:SetSize(16, 16)
+	triggerHelp:SetPoint("LEFT", triggerDrop, "RIGHT", 4, 3)
+
+	-- Use a built-in info icon if available, fall back to a question mark
+	local tex = triggerHelp:CreateTexture(nil, "OVERLAY")
+	tex:SetAllPoints()
+	tex:SetTexture("Interface\\FriendsFrame\\InformationIcon") -- nice little "i"
+
+	triggerHelp:SetScript("OnEnter", function(self)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Trigger modes", 1, 1, 1, true)
+
+		GameTooltip:AddLine("On Button Press:", 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine("  • Eligible every time the macro runs.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("  • Ignores cooldown and resource checks.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("  • Still respects chance and rate limiting.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+
+		GameTooltip:AddLine("On Cast:", 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine("  • Only eligible if the spell would actually cast now.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("  • Not on cooldown, and usable (enough resources, etc).", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+
+		GameTooltip:AddLine("When Cooldown Starts:", 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine("  • Fires once when the action goes from ready → on cooldown.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("  • Good for “rocket boosters online!” type lines.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+
+		GameTooltip:AddLine("When Cooldown Ready:", 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine("  • Fires once when the action goes from on cooldown → ready.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("  • Great for “Dash is back, captain.” reminders.", 0.8, 0.8, 0.8, true)
+
+		GameTooltip:Show()
+	end)
+
+	triggerHelp:SetScript("OnLeave", function()
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+
 
     local function TriggerDrop_OnClick(self)
         UIDropDownMenu_SetSelectedValue(triggerDrop, self.value)
     end
 
-    UIDropDownMenu_Initialize(triggerDrop, function(self, level)
-        local triggerModes = PE.TRIGGER_MODES or {
-            ON_CAST  = "On Cast",
-            ON_READY = "When Cooldown Ready",
-            ON_CD    = "When Cooldown Starts",
-        }
+	UIDropDownMenu_Initialize(triggerDrop, function(self, level)
+		local triggerModes = PE.TRIGGER_MODES or {
+			ON_PRESS = "On Button Press",
+			ON_CAST  = "On Cast",
+			ON_READY = "When Cooldown Ready",
+			ON_CD    = "When Cooldown Starts",
+		}
+		local info = UIDropDownMenu_CreateInfo()
+		for key, label in pairs(triggerModes) do
+			info.text = label
+			info.value = key
+			info.func = TriggerDrop_OnClick
+			info.checked = (UIDropDownMenu_GetSelectedValue(self) == key)
+			UIDropDownMenu_AddButton(info, level)
+		end
+	end)
 
-        local info = UIDropDownMenu_CreateInfo()
-        for key, label in pairs(triggerModes) do
-            info.text    = label
-            info.value   = key
-            info.func    = TriggerDrop_OnClick
-            info.checked = (UIDropDownMenu_GetSelectedValue(self) == key)
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
-
-    UIDropDownMenu_SetWidth(triggerDrop, 170)
-    UIDropDownMenu_SetSelectedValue(triggerDrop, "ON_CAST")
-    UIDropDownMenu_SetText(
-        triggerDrop,
-        (PE.TRIGGER_MODES and PE.TRIGGER_MODES["ON_CAST"]) or "On Cast"
-    )
+	UIDropDownMenu_SetWidth(triggerDrop, 190)
+	UIDropDownMenu_SetSelectedValue(triggerDrop, "ON_CAST")
+	UIDropDownMenu_SetText(
+		triggerDrop,
+		(PE.TRIGGER_MODES and PE.TRIGGER_MODES["ON_CAST"])
+			or "On Cast"
+	)
 
     configFrame.triggerDrop = triggerDrop
 

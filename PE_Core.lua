@@ -4,8 +4,8 @@
 -- ##################################################
 
 local MODULE = "Core"
-local PE     = PE
 
+local PE = PE
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] PE_Core.lua loaded without PE core!|r")
     return
@@ -15,12 +15,14 @@ if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
 
+local lastP
+
 ----------------------------------------------------
 -- Chat rate limiter (anti-spam safety)
 ----------------------------------------------------
 
-local RATE_WINDOW_SECONDS = 8      -- sliding window length
-local RATE_MAX_MESSAGES   = 5      -- allowed messages per window
+local RATE_WINDOW_SECONDS = 8   -- sliding window length
+local RATE_MAX_MESSAGES   = 5   -- allowed messages per window
 
 local function PE_CanSendMessage()
     local now = GetTime()
@@ -29,7 +31,7 @@ local function PE_CanSendMessage()
 
     if now - (st.windowStart or 0) > RATE_WINDOW_SECONDS then
         st.windowStart = now
-        st.count       = 0
+        st.count = 0
     end
 
     if st.count >= RATE_MAX_MESSAGES then
@@ -212,6 +214,196 @@ local function PE_SchedulePersonaMessage(text, channel, opts, delay)
 end
 
 ----------------------------------------------------
+-- Trigger modes + runtime state
+----------------------------------------------------
+
+-- Shared label map (also consumed by ConfigUI)
+/* This table defines the triggers we talked about in the dumps:
+ *   ON_PRESS:  every macro call is eligible.
+ *   ON_CAST:   only if the action would actually cast.
+ *   ON_CD:     once when cooldown starts (ready -> on CD).
+ *   ON_READY:  once when cooldown finishes (on CD -> ready).
+ */
+PE.TRIGGER_MODES = PE.TRIGGER_MODES or {
+    ON_PRESS = "On Button Press",
+    ON_CAST  = "On Cast",
+    ON_CD    = "When Cooldown Starts",
+    ON_READY = "When Cooldown Ready",
+}
+
+-- Runtime space for per-action cooldown tracking and press windows.
+local Runtime = PE.Runtime or {}
+PE.Runtime    = Runtime
+
+Runtime.cooldownState = Runtime.cooldownState or {}
+Runtime.pressState    = Runtime.pressState    or {}
+
+local cooldownState   = Runtime.cooldownState
+local pressState      = Runtime.pressState
+
+----------------------------------------------------
+-- Cooldown + usability helpers
+----------------------------------------------------
+
+-- Returns: onCD:boolean, remaining:number (seconds)
+local function PE_GetActionCooldown(kind, id)
+    if not kind or not id then
+        return false, 0
+    end
+
+    kind = type(kind) == "string" and string.lower(kind) or kind
+
+    -- Spells
+    if kind == "spell" and GetSpellCooldown then
+        local start, duration, enabled = GetSpellCooldown(id)
+        if not start or start == 0 or duration == 0 or enabled == 0 then
+            return false, 0
+        end
+
+        local now       = GetTime and GetTime() or 0
+        local remaining = math.max(0, (start + duration) - now)
+        if remaining <= 0.01 then
+            return false, 0
+        end
+
+        return true, remaining
+    end
+
+    -- Items
+    if kind == "item" and GetItemCooldown then
+        local start, duration, enabled = GetItemCooldown(id)
+        if not start or start == 0 or duration == 0 or enabled == 0 then
+            return false, 0
+        end
+
+        local now       = GetTime and GetTime() or 0
+        local remaining = math.max(0, (start + duration) - now)
+        if remaining <= 0.01 then
+            return false, 0
+        end
+
+        return true, remaining
+    end
+
+    -- Emotes / unknown: no cooldown
+    return false, 0
+end
+
+-- Returns: eligible:boolean
+local function PE_IsActionCastEligible(kind, id)
+    kind = type(kind) == "string" and string.lower(kind) or kind
+
+    local onCD = select(1, PE_GetActionCooldown(kind, id))
+    if onCD then
+        return false
+    end
+
+    -- Resource / usability checks where we can
+    if kind == "spell" and IsUsableSpell then
+        local usable = IsUsableSpell(id)
+        if not usable then
+            return false
+        end
+    elseif kind == "item" and IsUsableItem then
+        local usable = IsUsableItem(id)
+        if not usable then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Per-press window: treat closely-timed PE.Say calls as one "decision"
+local PRESS_WINDOW_SECONDS = 0.10
+
+local function BeginPressWindow()
+    local now = GetTime and GetTime() or 0
+    local ps  = pressState
+
+    if not ps.lastTime or (now - ps.lastTime) > PRESS_WINDOW_SECONDS then
+        ps.lastTime = now
+        ps.spoke    = false
+    end
+end
+
+local function HasSpokenThisPress()
+    return not not pressState.spoke
+end
+
+local function MarkSpokeThisPress()
+    pressState.spoke = true
+end
+
+-- Trigger gate: decides if this PE.Say call is eligible *before* chance
+local function PE_ShouldSpeakForTrigger(kind, id, cfg)
+    if not kind or not id or not cfg then
+        return false
+    end
+
+    kind = type(kind) == "string" and string.lower(kind) or kind
+
+    local trigger = cfg.trigger or "ON_CAST"
+    trigger = string.upper(trigger or "ON_CAST")
+
+    -- ON_PRESS: always eligible; we still keep cooldown state up to date
+    if trigger == "ON_PRESS" then
+        local onCD = select(1, PE_GetActionCooldown(kind, id))
+        local key  = tostring(kind) .. ":" .. tostring(id)
+        local st   = cooldownState[key]
+
+        if not st then
+            st = { wasOnCD = onCD }
+            cooldownState[key] = st
+        else
+            st.wasOnCD = onCD
+        end
+
+        return true
+    end
+
+    local onCD = select(1, PE_GetActionCooldown(kind, id))
+    local key  = tostring(kind) .. ":" .. tostring(id)
+    local st   = cooldownState[key]
+    local baseline = false
+
+    if not st then
+        st = { wasOnCD = onCD }
+        cooldownState[key] = st
+        baseline = true
+    end
+
+    local shouldSpeak = false
+
+    if trigger == "ON_CAST" then
+        -- Only if it looks like it *would* cast right now.
+        shouldSpeak = PE_IsActionCastEligible(kind, id)
+        st.wasOnCD  = onCD
+
+    elseif trigger == "ON_CD" then
+        -- "When Cooldown Starts": first transition ready -> on cooldown
+        if not baseline and st.wasOnCD == false and onCD then
+            shouldSpeak = true
+        end
+        st.wasOnCD = onCD
+
+    elseif trigger == "ON_READY" then
+        -- "When Cooldown Ready": first transition on CD -> ready
+        if not baseline and st.wasOnCD == true and not onCD then
+            shouldSpeak = true
+        end
+        st.wasOnCD = onCD
+
+    else
+        -- Unknown / future trigger types: treat as ON_CAST for safety
+        shouldSpeak = PE_IsActionCastEligible(kind, id)
+        st.wasOnCD  = onCD
+    end
+
+    return shouldSpeak
+end
+
+----------------------------------------------------
 -- Internal helpers for unified Speak() API
 ----------------------------------------------------
 
@@ -230,6 +422,7 @@ local function PE_SpeakPool(spec)
     if not PE.CanSpeak() then
         return
     end
+
     if not pool or #pool == 0 then
         return
     end
@@ -237,6 +430,7 @@ local function PE_SpeakPool(spec)
     if chance < 1 then
         chance = 1
     end
+
     if math.random(chance) ~= 1 then
         return
     end
@@ -266,6 +460,7 @@ local function PE_SpeakPhraseKey(phraseKey, spec)
     if chance < 1 then
         chance = 1
     end
+
     if math.random(chance) ~= 1 then
         return
     end
@@ -274,12 +469,10 @@ local function PE_SpeakPhraseKey(phraseKey, spec)
     local cfg     = spec.cfg
     local ctx     = spec.ctx or {}
     local stateId = spec.stateId or (PE_GetMacroState and PE_GetMacroState() or "idle")
-
-    ctx.stateId = ctx.stateId or stateId
-
+    ctx.stateId   = ctx.stateId or stateId
     local eventId = spec.eventId or ("PHRASE_" .. tostring(phraseKey))
-    local line    = PE.Phrases.PickLine(phraseKey, ctx, stateId, eventId)
 
+    local line = PE.Phrases.PickLine(phraseKey, ctx, stateId, eventId)
     if not line or line == "" then
         return
     end
@@ -303,6 +496,7 @@ local function PE_SpeakLiteral(text, spec)
     if chance < 1 then
         chance = 1
     end
+
     if math.random(chance) ~= 1 then
         return
     end
@@ -319,11 +513,16 @@ end
 
 ----------------------------------------------------
 -- 4) Action bubble helper (spell / item / emote)
---    used by FireBubble, Speak, and PE.Say
+-- used by FireBubble, Speak, and PE.Say
 ----------------------------------------------------
+
 local function PE_SpeakActionBubble(kind, id, isReactionOverride, explicitCfg)
-    if not kind or not id then return end
-    if not PersonaEngineDB then return end
+    if not kind or not id then
+        return
+    end
+    if not PersonaEngineDB then
+        return
+    end
 
     -- normalize kind to lower
     if type(kind) == "string" then
@@ -343,19 +542,58 @@ local function PE_SpeakActionBubble(kind, id, isReactionOverride, explicitCfg)
         cfg = PersonaEngineDB.spells[id]
     end
 
-    if not cfg then return end
-    if not PE.CanSpeak(cfg) then return end
+    if not cfg then
+        return
+    end
 
+    if not PE.CanSpeak(cfg) then
+        return
+    end
+
+    ------------------------------------------------
+    -- Trigger gate (ON_PRESS / ON_CAST / ON_CD / ON_READY)
+    ------------------------------------------------
+    if not PE_ShouldSpeakForTrigger(kind, id, cfg) then
+        return
+    end
+
+    ------------------------------------------------
+    -- Per-press window: only one line can "win" each press
+    ------------------------------------------------
+    BeginPressWindow()
+
+    -- If something already spoke this press, bail early.
+    if HasSpokenThisPress() then
+        return
+    end
+
+    ------------------------------------------------
+    -- Chance gate
+    ------------------------------------------------
     local chance = cfg.chance or 10
-    if chance < 1 then chance = 1 end
-    if math.random(chance) ~= 1 then return end
+    if chance < 1 then
+        chance = 1
+    end
+    if math.random(chance) ~= 1 then
+        -- Important: failed chance does *not* consume the press.
+        -- This matches the dump design where KC can fail, but Dash
+        -- still gets a shot in the same macro.
+        return
+    end
 
-    -- Channel selection (prefer SAY/YELL/EMOTE; then first enabled)
+    ------------------------------------------------
+    -- Channel selection
+    -- (prefer SAY/YELL/EMOTE; then first enabled)
+    ------------------------------------------------
     local channel = "SAY"
+
     if cfg.channels and next(cfg.channels) then
-        if cfg.channels.SAY   then channel = "SAY"
-        elseif cfg.channels.YELL  then channel = "YELL"
-        elseif cfg.channels.EMOTE then channel = "EMOTE"
+        if cfg.channels.SAY then
+            channel = "SAY"
+        elseif cfg.channels.YELL then
+            channel = "YELL"
+        elseif cfg.channels.EMOTE then
+            channel = "EMOTE"
         else
             for ch, on in pairs(cfg.channels) do
                 if on then
@@ -366,9 +604,12 @@ local function PE_SpeakActionBubble(kind, id, isReactionOverride, explicitCfg)
         end
     end
 
-    -- Context
+    ------------------------------------------------
+    -- Context build
+    ------------------------------------------------
     local baseCtx = cfg.ctx or {}
-    local ctx = {}
+    local ctx     = {}
+
     for k, v in pairs(baseCtx) do
         ctx[k] = v
     end
@@ -388,49 +629,69 @@ local function PE_SpeakActionBubble(kind, id, isReactionOverride, explicitCfg)
 
     local eventId = cfg.eventId or ("BUBBLE_" .. tostring(kind) .. "_" .. tostring(id))
 
+    ------------------------------------------------
+    -- Phrase selection
+    ------------------------------------------------
     local line
+
     if cfg.phraseKey and PE.Phrases and PE.Phrases.PickLine then
         line = PE.Phrases.PickLine(cfg.phraseKey, ctx, stateId, eventId)
     else
         local phrases = cfg.phrases
-        if not phrases or #phrases == 0 then return end
+        if not phrases or #phrases == 0 then
+            return
+        end
         line = PE_SelectLine(phrases)
     end
 
-    if not line or line == "" then return end
+    if not line or line == "" then
+        return
+    end
+
+    ------------------------------------------------
+    -- We are officially the winner for this press
+    ------------------------------------------------
+    MarkSpokeThisPress()
 
     ------------------------------------------------
     -- Action vs reaction (optional delay)
     ------------------------------------------------
     local delay = 0
+
     if isReactionOverride == true then
         -- Forced reaction
         local minD = cfg.reactionDelayMin or 1.0
         local maxD = cfg.reactionDelayMax or 2.5
-        if maxD < minD then maxD = minD end
+        if maxD < minD then
+            maxD = minD
+        end
         delay = minD + math.random() * (maxD - minD)
+
     elseif isReactionOverride == false then
         delay = 0
+
     else
         -- Probabilistic reaction
         local rc = cfg.reactionChance or 0
         if rc > 0 and math.random() < rc then
             local minD = cfg.reactionDelayMin or 1.0
             local maxD = cfg.reactionDelayMax or 2.5
-            if maxD < minD then maxD = minD end
+            if maxD < minD then
+                maxD = minD
+            end
             delay = minD + math.random() * (maxD - minD)
         end
     end
 
-    -- Macros can choose SAY/YELL/etc.; bypass resolver
+    -- Macros choose SAY/YELL/etc.; bypass resolver
     PE_SchedulePersonaMessage(
         line,
         channel,
         {
-            cfg          = cfg,
+            cfg           = cfg,
             bypassResolve = true,
-            eventId      = eventId,
-            ctx          = ctx,
+            eventId       = eventId,
+            ctx           = ctx,
         },
         delay
     )
@@ -438,19 +699,24 @@ end
 
 -- Spell-only wrapper, used by PE.Speak and legacy FireBubble
 local function PE_SpeakSpellBubble(spellID, isReactionOverride, explicitCfg)
-    if not spellID then return end
+    if not spellID then
+        return
+    end
     return PE_SpeakActionBubble("spell", spellID, isReactionOverride, explicitCfg)
 end
 
 ----------------------------------------------------
 -- Short macro helper: PE.Say(...)
+----------------------------------------------------
 -- Usage:
 --   /run PE.Say("spell", 34026)
 --   /run PE.Say("item", 5512)
 --   /run PE.Say("emote", "wave")
+--
 -- Legacy:
---   /run PE.Say(34026[, true])  -- spellID, optional reaction override
+--   /run PE.Say(34026[, true])   -- spellID, optional reaction override
 ----------------------------------------------------
+
 function PE.Say(a, b, c)
     local t = type(a)
 
@@ -493,6 +759,7 @@ function PE.Speak(...)
         if t == "number" then
             -- spellID bubble
             return PE_SpeakSpellBubble(spec, nil, nil)
+
         elseif t == "string" then
             -- phraseKey or literal
             if PE.Phrases and PE.Phrases.registry and PE.Phrases.registry[spec] then
@@ -500,6 +767,7 @@ function PE.Speak(...)
             else
                 return PE_SpeakLiteral(spec, nil)
             end
+
         elseif t == "table" then
             -- explicit table
             if spec.spellID then
@@ -527,6 +795,7 @@ function PE.Speak(...)
     if t1 == "number" then
         -- spellID, isReactionOverride
         return PE_SpeakSpellBubble(first, second, nil)
+
     elseif t1 == "string" then
         -- phraseKey or literal with options table
         if type(second) == "table" or second == nil then
@@ -537,6 +806,7 @@ function PE.Speak(...)
             end
         end
     end
+
     -- silently ignore junk
 end
 
@@ -544,7 +814,7 @@ end
 -- Legacy Public APIs (compat)
 ----------------------------------------------------
 
--- SR pool
+-- SR pool function
 function SR(a)
     return PE_SpeakPool(a)
 end
@@ -585,18 +855,18 @@ end
 -- Macro usage helper
 ----------------------------------------------------
 
-PE.Macros      = PE.Macros or {}
-local Macros   = PE.Macros
+PE.Macros = PE.Macros or {}
+local Macros = PE.Macros
 
 function Macros.GetUsage()
     local numGlobal, numChar, maxGlobal, maxChar = GetNumMacros()
     return {
-        globalUsed  = numGlobal,
-        globalFree  = maxGlobal - numGlobal,
-        globalMax   = maxGlobal,
-        charUsed    = numChar,
-        charFree    = maxChar - numChar,
-        charMax     = maxChar,
+        globalUsed = numGlobal,
+        globalFree = maxGlobal - numGlobal,
+        globalMax  = maxGlobal,
+        charUsed   = numChar,
+        charFree   = maxChar - numChar,
+        charMax    = maxChar,
     }
 end
 
