@@ -122,6 +122,18 @@ local function GetSpellInfoByInput(input)
 end
 
 ----------------------------------------------------
+-- Action lookup wrapper (spell / item / emote)
+----------------------------------------------------
+local function GetActionByInput(input)
+    -- Guard: if PE_Actions.lua didn't load for some reason
+    if not PE or not PE.ResolveActionFromInput then
+        return nil
+    end
+
+    return PE.ResolveActionFromInput(input)
+end
+
+----------------------------------------------------
 -- Config frame construction
 ----------------------------------------------------
 
