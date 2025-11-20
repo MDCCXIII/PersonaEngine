@@ -326,10 +326,12 @@ local function BuildConfigFrame()
 
         -- Trigger dropdown
 		local triggerModes = PE.TRIGGER_MODES or {
-			ON_PRESS = "On Button Press",
-			ON_CAST  = "On Cast",
-			ON_READY = "When Cooldown Ready",
-			ON_CD    = "When Cooldown Starts",
+		  ON_PRESS       = "On Button Press",
+		  ON_CAST        = "On Cast",
+		  ON_CD          = "When Cooldown Starts",
+		  ON_READY       = "When Cooldown Ready",
+		  ON_BUFF_ACTIVE = "While Buff Is Active",
+		  ON_NOT_GCD     = "When GCD Is Free",
 		}
 		UIDropDownMenu_SetSelectedValue(configFrame.triggerDrop, cfg.trigger)
 		UIDropDownMenu_SetText(
@@ -428,32 +430,55 @@ local function BuildConfigFrame()
 	tex:SetTexture("Interface\\FriendsFrame\\InformationIcon") -- nice little "i"
 
 	triggerHelp:SetScript("OnEnter", function(self)
-		if not GameTooltip then return end
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:SetText("Trigger modes", 1, 1, 1, true)
+	  if not GameTooltip then return end
 
-		GameTooltip:AddLine("On Button Press:", 0.9, 0.9, 0.9, true)
-		GameTooltip:AddLine("  • Eligible every time the macro runs.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine("  • Ignores cooldown and resource checks.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine("  • Still respects chance and rate limiting.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+	  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	  GameTooltip:SetText("Trigger modes", 1, 1, 1, true)
 
-		GameTooltip:AddLine("On Cast:", 0.9, 0.9, 0.9, true)
-		GameTooltip:AddLine("  • Only eligible if the spell would actually cast now.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine("  • Not on cooldown, and usable (enough resources, etc).", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+	  -- ON_PRESS
+	  GameTooltip:AddLine("On Button Press:", 0.9, 0.9, 0.9, true)
+	  GameTooltip:AddLine(" • Eligible every time the macro runs.", 0.8, 0.8, 0.8, true)
+	  GameTooltip:AddLine(" • Ignores cooldown and resource checks.", 0.8, 0.8, 0.8, true)
+	  GameTooltip:AddLine(" • Still respects chance and rate limiting.", 0.8, 0.8, 0.8, true)
 
-		GameTooltip:AddLine("When Cooldown Starts:", 0.9, 0.9, 0.9, true)
-		GameTooltip:AddLine("  • Fires once when the action goes from ready → on cooldown.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine("  • Good for “rocket boosters online!” type lines.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+	  GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
 
-		GameTooltip:AddLine("When Cooldown Ready:", 0.9, 0.9, 0.9, true)
-		GameTooltip:AddLine("  • Fires once when the action goes from on cooldown → ready.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine("  • Great for “Dash is back, captain.” reminders.", 0.8, 0.8, 0.8, true)
+	  -- ON_CAST
+	  GameTooltip:AddLine("On Cast:", 0.9, 0.9, 0.9, true)
+	  GameTooltip:AddLine(" • Only eligible if the spell would actually cast now.", 0.8, 0.8, 0.8, true)
+	  GameTooltip:AddLine(" • Not on cooldown, and usable (enough resources, etc).", 0.8, 0.8, 0.8, true)
 
-		GameTooltip:Show()
+	  GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+
+	  -- ON_CD
+	  GameTooltip:AddLine("When Cooldown Starts:", 0.9, 0.9, 0.9, true)
+	  GameTooltip:AddLine(" • Fires once when the action goes from ready → on cooldown.", 0.8, 0.8, 0.8, true)
+	  GameTooltip:AddLine(" • Good for “rocket boosters online!” type lines.", 0.8, 0.8, 0.8, true)
+
+	  GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+
+	  -- ON_READY
+	  GameTooltip:AddLine("When Cooldown Ready:", 0.9, 0.9, 0.9, true)
+	  GameTooltip:AddLine(" • Fires once when the action goes from on cooldown → ready.", 0.8, 0.8, 0.8, true)
+	  GameTooltip:AddLine(" • Great for “Dash is back, captain.” reminders.", 0.8, 0.8, 0.8, true)
+
+	  GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+
+	  -- ON_BUFF_ACTIVE
+	  GameTooltip:AddLine("While Buff Is Active:", 0.9, 0.9, 0.9, true)
+	  GameTooltip:AddLine(" • Eligible only while this spell's buff is on you or your pet.", 0.8, 0.8, 0.8, true)
+	  GameTooltip:AddLine(" • Great for “while Bestial Wrath is up” style lines.", 0.8, 0.8, 0.8, true)
+
+	  GameTooltip:AddLine(" ", 0.0, 0.0, 0.0, false)
+
+	  -- ON_NOT_GCD
+	  GameTooltip:AddLine("When GCD Is Free:", 0.9, 0.9, 0.9, true)
+	  GameTooltip:AddLine(" • Eligible only when the global cooldown is currently free.", 0.8, 0.8, 0.8, true)
+	  GameTooltip:AddLine(" • Helps avoid double chatter while you spam the key on cooldown.", 0.8, 0.8, 0.8, true)
+
+	  GameTooltip:Show()
 	end)
+
 
 	triggerHelp:SetScript("OnLeave", function()
 		if GameTooltip then GameTooltip:Hide() end

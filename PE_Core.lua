@@ -218,28 +218,49 @@ end
 ----------------------------------------------------
 
 -- Shared label map (also consumed by ConfigUI)
-/* This table defines the triggers we talked about in the dumps:
- *   ON_PRESS:  every macro call is eligible.
- *   ON_CAST:   only if the action would actually cast.
- *   ON_CD:     once when cooldown starts (ready -> on CD).
- *   ON_READY:  once when cooldown finishes (on CD -> ready).
- */
+--[[
+This table defines the triggers we talked about in the dumps:
+
+* ON_PRESS:
+  - Every macro call is eligible.
+  - Ignores cooldown / resources; pure personality.
+
+* ON_CAST:
+  - Only if the action would actually cast right now.
+  - Not on cooldown, and IsUsableSpell/IsUsableItem says "yes".
+
+* ON_CD:
+  - Fires once when cooldown starts (ready -> on cooldown).
+
+* ON_READY:
+  - Fires once when cooldown finishes (on cooldown -> ready).
+
+* ON_BUFF_ACTIVE:
+  - Eligible only while this spell's buff is active on you or your pet.
+
+* ON_NOT_GCD:
+  - Eligible only when the global cooldown is currently free.
+  - Good for avoiding chatter on heavy GCD spam.
+]]
 PE.TRIGGER_MODES = PE.TRIGGER_MODES or {
-    ON_PRESS = "On Button Press",
-    ON_CAST  = "On Cast",
-    ON_CD    = "When Cooldown Starts",
-    ON_READY = "When Cooldown Ready",
+  ON_PRESS       = "On Button Press",
+  ON_CAST        = "On Cast",
+  ON_CD          = "When Cooldown Starts",
+  ON_READY       = "When Cooldown Ready",
+  ON_BUFF_ACTIVE = "While Buff Is Active",
+  ON_NOT_GCD     = "When GCD Is Free",
 }
 
 -- Runtime space for per-action cooldown tracking and press windows.
 local Runtime = PE.Runtime or {}
-PE.Runtime    = Runtime
+PE.Runtime = Runtime
 
 Runtime.cooldownState = Runtime.cooldownState or {}
-Runtime.pressState    = Runtime.pressState    or {}
+Runtime.pressState     = Runtime.pressState     or {}
 
-local cooldownState   = Runtime.cooldownState
-local pressState      = Runtime.pressState
+local cooldownState = Runtime.cooldownState
+local pressState    = Runtime.pressState
+
 
 ----------------------------------------------------
 -- Cooldown + usability helpers
@@ -314,6 +335,76 @@ local function PE_IsActionCastEligible(kind, id)
     return true
 end
 
+----------------------------------------------------
+-- Extra helpers: global cooldown + buff checks
+----------------------------------------------------
+
+local function PE_IsGlobalCooldownActive()
+  if not GetSpellCooldown then
+    return false
+  end
+
+  -- 61304 is the standard "global cooldown" token spell.
+  local start, duration, enabled = GetSpellCooldown(61304)
+  if not start or start == 0 or duration == 0 or enabled == 0 then
+    return false
+  end
+
+  local now = GetTime and GetTime() or 0
+  if (start + duration) <= now + 0.01 then
+    return false
+  end
+
+  return true
+end
+
+-- Simple "does this spell's buff exist on player or pet?" helper.
+local function PE_IsActionBuffActive(kind, id)
+  if kind ~= "spell" or not GetSpellInfo then
+    return false
+  end
+
+  local spellName = GetSpellInfo(id)
+  if not spellName or spellName == "" then
+    return false
+  end
+
+  local function HasAuraOn(unit)
+    if not unit then
+      return false
+    end
+
+    -- Retail-style AuraUtil
+    if AuraUtil and AuraUtil.FindAuraByName then
+      local auraName = AuraUtil.FindAuraByName(spellName, unit, "HELPFUL")
+      return auraName ~= nil
+    elseif UnitAura then
+      -- Classic-style UnitAura
+      for i = 1, 40 do
+        local name = UnitAura(unit, i, "HELPFUL")
+        if not name then
+          break
+        end
+        if name == spellName then
+          return true
+        end
+      end
+    end
+
+    return false
+  end
+
+  if HasAuraOn("player") then
+    return true
+  end
+  if UnitExists and UnitExists("pet") and HasAuraOn("pet") then
+    return true
+  end
+
+  return false
+end
+
+
 -- Per-press window: treat closely-timed PE.Say calls as one "decision"
 local PRESS_WINDOW_SECONDS = 0.10
 
@@ -337,71 +428,99 @@ end
 
 -- Trigger gate: decides if this PE.Say call is eligible *before* chance
 local function PE_ShouldSpeakForTrigger(kind, id, cfg)
-    if not kind or not id or not cfg then
-        return false
-    end
+  if not kind or not id or not cfg then
+    return false
+  end
 
-    kind = type(kind) == "string" and string.lower(kind) or kind
+  kind = type(kind) == "string" and string.lower(kind) or kind
 
-    local trigger = cfg.trigger or "ON_CAST"
-    trigger = string.upper(trigger or "ON_CAST")
+  local trigger = cfg.trigger or "ON_CAST"
+  trigger = string.upper(trigger or "ON_CAST")
 
-    -- ON_PRESS: always eligible; we still keep cooldown state up to date
-    if trigger == "ON_PRESS" then
-        local onCD = select(1, PE_GetActionCooldown(kind, id))
-        local key  = tostring(kind) .. ":" .. tostring(id)
-        local st   = cooldownState[key]
+  -- Backwards-compat alias mapping
+  if trigger == "ON_CD_START" then
+    trigger = "ON_CD"
+  elseif trigger == "ON_CD_READY" or trigger == "ON_COOLDOWN_READY" then
+    trigger = "ON_READY"
+  elseif trigger == "ON_BUFF" then
+    trigger = "ON_BUFF_ACTIVE"
+  elseif trigger == "ON_GCD_FREE" then
+    trigger = "ON_NOT_GCD"
+  end
 
-        if not st then
-            st = { wasOnCD = onCD }
-            cooldownState[key] = st
-        else
-            st.wasOnCD = onCD
-        end
-
-        return true
-    end
-
+  ------------------------------------------------
+  -- ON_PRESS: always eligible; we still keep cooldown state up to date
+  ------------------------------------------------
+  if trigger == "ON_PRESS" then
     local onCD = select(1, PE_GetActionCooldown(kind, id))
-    local key  = tostring(kind) .. ":" .. tostring(id)
-    local st   = cooldownState[key]
-    local baseline = false
+    local key = tostring(kind) .. ":" .. tostring(id)
+    local st = cooldownState[key]
 
     if not st then
-        st = { wasOnCD = onCD }
-        cooldownState[key] = st
-        baseline = true
-    end
-
-    local shouldSpeak = false
-
-    if trigger == "ON_CAST" then
-        -- Only if it looks like it *would* cast right now.
-        shouldSpeak = PE_IsActionCastEligible(kind, id)
-        st.wasOnCD  = onCD
-
-    elseif trigger == "ON_CD" then
-        -- "When Cooldown Starts": first transition ready -> on cooldown
-        if not baseline and st.wasOnCD == false and onCD then
-            shouldSpeak = true
-        end
-        st.wasOnCD = onCD
-
-    elseif trigger == "ON_READY" then
-        -- "When Cooldown Ready": first transition on CD -> ready
-        if not baseline and st.wasOnCD == true and not onCD then
-            shouldSpeak = true
-        end
-        st.wasOnCD = onCD
-
+      st = { wasOnCD = onCD }
+      cooldownState[key] = st
     else
-        -- Unknown / future trigger types: treat as ON_CAST for safety
-        shouldSpeak = PE_IsActionCastEligible(kind, id)
-        st.wasOnCD  = onCD
+      st.wasOnCD = onCD
     end
 
-    return shouldSpeak
+    return true
+  end
+
+  ------------------------------------------------
+  -- Everything else needs cooldown state
+  ------------------------------------------------
+  local onCD = select(1, PE_GetActionCooldown(kind, id))
+  local key = tostring(kind) .. ":" .. tostring(id)
+  local st  = cooldownState[key]
+  local baseline = false
+
+  if not st then
+    st = { wasOnCD = onCD }
+    cooldownState[key] = st
+    baseline = true
+  end
+
+  local shouldSpeak = false
+
+  if trigger == "ON_CAST" then
+    -- Only if it looks like it *would* cast right now.
+    shouldSpeak = PE_IsActionCastEligible(kind, id)
+    st.wasOnCD = onCD
+
+  elseif trigger == "ON_CD" then
+    -- "When Cooldown Starts": first transition ready -> on cooldown
+    if not baseline and st.wasOnCD == false and onCD then
+      shouldSpeak = true
+    end
+    st.wasOnCD = onCD
+
+  elseif trigger == "ON_READY" then
+    -- "When Cooldown Ready": first transition on CD -> ready
+    if not baseline and st.wasOnCD == true and not onCD then
+      shouldSpeak = true
+    end
+    st.wasOnCD = onCD
+
+  elseif trigger == "ON_BUFF_ACTIVE" then
+    -- Only eligible while this spell's buff is active on you or your pet.
+    shouldSpeak = PE_IsActionBuffActive(kind, id)
+    st.wasOnCD = onCD
+
+  elseif trigger == "ON_NOT_GCD" then
+    -- Only eligible when global cooldown is currently free.
+    local gcdActive = PE_IsGlobalCooldownActive()
+    shouldSpeak = not gcdActive
+    st.wasOnCD = onCD
+
+  else
+    -- Unknown / future trigger types: treat as ON_CAST for safety
+    shouldSpeak = PE_IsActionCastEligible(kind, id)
+    st.wasOnCD = onCD
+  end
+
+  return shouldSpeak
 end
+
 
 ----------------------------------------------------
 -- Internal helpers for unified Speak() API
