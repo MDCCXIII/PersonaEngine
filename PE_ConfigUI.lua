@@ -79,49 +79,13 @@ local function StyleText(widget, styleKey, overrides)
 end
 
 ----------------------------------------------------
--- Spell / action lookup wrappers
+-- Action lookup wrapper (spell / item / emote)
 ----------------------------------------------------
 
-local function GetSpellInfoByInput(input)
-    if not input or input == "" then return end
-
-    local spellID = tonumber(input)
-    local name, icon, id
-
-    -- Dragonflight API
-    if C_Spell and C_Spell.GetSpellInfo then
-        if spellID then
-            local info = C_Spell.GetSpellInfo(spellID)
-            if info then
-                return info.name, info.iconID, info.spellID
-            end
-        else
-            local info = C_Spell.GetSpellInfo(input)
-            if info then
-                return info.name, info.iconID, info.spellID
-            end
-        end
-    end
-
-    -- Classic GetSpellInfo fallback
-    if GetSpellInfo then
-        if spellID then
-            name, _, icon = GetSpellInfo(spellID)
-            id = spellID
-        else
-            name, _, icon, _, _, _, id = GetSpellInfo(input)
-        end
-        if name then
-            return name, icon, id
-        end
-    end
-
-    return nil
-end
-
--- Action lookup wrapper (spell / item / emote)
 local function GetActionByInput(input)
-    -- Guard: if PE_Actions.lua didn't load for some reason
+    if not input or input == "" then
+        return nil
+    end
     if not PE or not PE.ResolveActionFromInput then
         return nil
     end
@@ -135,7 +99,9 @@ end
 local configFrame
 
 local function BuildConfigFrame()
-    if configFrame then return end
+    if configFrame then
+        return
+    end
 
     ------------------------------------------------
     -- Main window via UI widget (persistent + resizable)
@@ -143,7 +109,7 @@ local function BuildConfigFrame()
     if UI and UI.CreateWindow then
         configFrame = UI.CreateWindow({
             id       = "Config",
-            title    = "Persona Engine \226\128\147 Config",
+            title    = "Persona Engine – Config",
             width    = 700,
             height   = 750,
             minWidth = 520,
@@ -174,7 +140,7 @@ local function BuildConfigFrame()
         else
             title:SetPoint("TOPLEFT", 10, -5)
         end
-        title:SetText("Persona Engine \226\128\147 Config")
+        title:SetText("Persona Engine – Config")
         configFrame.title = title
         StyleText(title, "TITLE")
 
@@ -255,8 +221,8 @@ local function BuildConfigFrame()
     macroNameEdit:SetAutoFocus(false)
     macroNameEdit:SetHeight(20)
     macroNameEdit:SetMaxLetters(16)
-    macroNameEdit:SetPoint("LEFT",  macroNameLabel, "RIGHT", 8, 0)
-    macroNameEdit:SetPoint("RIGHT", actionPage,     "RIGHT", -8, 0)
+    macroNameEdit:SetPoint("LEFT", macroNameLabel, "RIGHT", 8, 0)
+    macroNameEdit:SetPoint("RIGHT", actionPage, "RIGHT", -8, 0)
     configFrame.macroNameEdit = macroNameEdit
 
     ------------------------------------------------
@@ -299,9 +265,9 @@ local function BuildConfigFrame()
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Loading an action", 1, 1, 1, true)
-        GameTooltip:AddLine("\226\128\162 Type a spell, item, or emote name or ID.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("\226\128\162 Or Shift+Left-click it from your spellbook, action bar, or bags.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("\226\128\162 Then click |cffffff00Load|r to pull it into the Macro Studio.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("• Type a spell, item, or emote name or ID.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("• Or Shift+Left-click it from your spellbook, action bar, or bags.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("• Then click |cffffff00Load|r to pull it into the Macro Studio.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     spellHelp:SetScript("OnLeave", function()
@@ -351,17 +317,17 @@ local function BuildConfigFrame()
 
         spellInfoText:SetText(summary)
 
-        -- Pull config from DB
+        -- Pull config from DB (per-action)
         local cfg = PE.GetOrCreateActionConfig(action.kind, action.id)
 
         -- Trigger dropdown
         local triggerModes = PE.TRIGGER_MODES or {
-            ON_PRESS      = "On Button Press",
-            ON_CAST       = "On Cast",
-            ON_CD         = "When Cooldown Starts",
-            ON_READY      = "When Cooldown Ready",
-            ON_BUFF_ACTIVE= "While Buff Is Active",
-            ON_NOT_GCD    = "When GCD Is Free",
+            ON_PRESS       = "On Button Press",
+            ON_CAST        = "On Cast",
+            ON_CD          = "When Cooldown Starts",
+            ON_READY       = "When Cooldown Ready",
+            ON_BUFF_ACTIVE = "While Buff Is Active",
+            ON_NOT_GCD     = "When GCD Is Free",
         }
 
         UIDropDownMenu_SetSelectedValue(configFrame.triggerDrop, cfg.trigger)
@@ -396,9 +362,12 @@ local function BuildConfigFrame()
         end
         configFrame.phraseEdit:SetText(buf)
 
-        -- Macro snippet, using PE.Say (delegated to MacroStudio)
+        -- Macro snippet: build default using current macro name (if any)
         if configFrame.macroEdit and PE.MacroStudio and PE.MacroStudio.BuildDefaultMacroForAction then
-            local macroText = PE.MacroStudio.BuildDefaultMacroForAction(action)
+            local macroText = PE.MacroStudio.BuildDefaultMacroForAction(
+                action,
+                configFrame.macroNameEdit and configFrame.macroNameEdit:GetText() or nil
+            )
             if macroText and macroText ~= "" then
                 configFrame.macroEdit:SetText(macroText)
             end
@@ -429,38 +398,35 @@ local function BuildConfigFrame()
 
     triggerHelp:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
+
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Trigger modes", 1, 1, 1, true)
 
         GameTooltip:AddLine("On Button Press:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" \226\128\162 Eligible every time the macro runs.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" \226\128\162 Ignores cooldown and resource checks.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" \226\128\162 Still respects chance and rate limiting.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Eligible every time the macro runs.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Ignores cooldown and resource checks.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Still respects chance and rate limiting.", 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine(" ", 0, 0, 0, false)
 
         GameTooltip:AddLine("On Cast:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" \226\128\162 Only eligible if the spell would actually cast now.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" \226\128\162 Not on cooldown, and usable (resources, range, etc.).", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Only if the action would actually cast now.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Not on cooldown, and usable (resources/range).", 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine(" ", 0, 0, 0, false)
 
         GameTooltip:AddLine("When Cooldown Starts:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" \226\128\162 Fires once when the action goes from ready \226\134\146 on cooldown.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" \226\128\162 Good for “rocket boosters online!” lines.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Fires once when the action goes from ready → on cooldown.", 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine(" ", 0, 0, 0, false)
 
         GameTooltip:AddLine("When Cooldown Ready:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" \226\128\162 Fires once when the action goes from on cooldown \226\134\146 ready.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" \226\128\162 Great for “Dash is back, captain.” reminders.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Fires once when the action goes from on cooldown → ready.", 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine(" ", 0, 0, 0, false)
 
         GameTooltip:AddLine("While Buff Is Active:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" \226\128\162 Eligible only while this spell's buff is on you or your pet.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" \226\128\162 Great for “while Bestial Wrath is up” commentary.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Eligible only while this spell's buff is on you or your pet.", 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine(" ", 0, 0, 0, false)
 
         GameTooltip:AddLine("When GCD Is Free:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" \226\128\162 Eligible only when the global cooldown is currently free.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" \226\128\162 Helps avoid double chatter while you spam on cooldown.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" • Eligible only while the global cooldown is currently free.", 0.8, 0.8, 0.8, true)
 
         GameTooltip:Show()
     end)
@@ -468,11 +434,11 @@ local function BuildConfigFrame()
         if GameTooltip then GameTooltip:Hide() end
     end)
 
-    local function TriggerDrop_OnClick(self)
-        UIDropDownMenu_SetSelectedValue(triggerDrop, self.value)
+    local function TriggerDrop_OnClick(selfBtn)
+        UIDropDownMenu_SetSelectedValue(triggerDrop, selfBtn.value)
     end
 
-    UIDropDownMenu_Initialize(triggerDrop, function(self, level)
+    UIDropDownMenu_Initialize(triggerDrop, function(selfDD, level)
         local triggerModes = PE.TRIGGER_MODES or {
             ON_PRESS = "On Button Press",
             ON_CAST  = "On Cast",
@@ -485,7 +451,7 @@ local function BuildConfigFrame()
             info.text    = label
             info.value   = key
             info.func    = TriggerDrop_OnClick
-            info.checked = (UIDropDownMenu_GetSelectedValue(self) == key)
+            info.checked = (UIDropDownMenu_GetSelectedValue(selfDD) == key)
             UIDropDownMenu_AddButton(info, level)
         end
     end)
@@ -518,9 +484,9 @@ local function BuildConfigFrame()
     local enabledCheck
     if UI and UI.CreateCheckbox then
         enabledCheck = UI.CreateCheckbox(actionPage, {
-            label  = "Enabled",
-            point  = { "LEFT", chanceEdit, "RIGHT", 20, 0 },
-            checked= true,
+            label   = "Enabled",
+            point   = { "LEFT", chanceEdit, "RIGHT", 20, 0 },
+            checked = true,
         })
     else
         enabledCheck = CreateFrame("CheckButton", nil, actionPage, "InterfaceOptionsCheckButtonTemplate")
@@ -575,7 +541,7 @@ local function BuildConfigFrame()
     configFrame.channelCheckboxes = chanChecks
 
     ------------------------------------------------
-    -- Phrase editor: shared multiline widget
+    -- Phrase editor
     ------------------------------------------------
     local phraseLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
@@ -583,23 +549,23 @@ local function BuildConfigFrame()
     StyleText(phraseLabel, "LABEL")
 
     local phraseScroll, phraseEdit
+
     if UI and UI.CreateMultilineEdit then
-        local PHRASE_BOTTOM_OFFSET = 180 -- try 160 / 180 / 200 to taste
+        local PHRASE_BOTTOM_OFFSET = 180
 
         phraseScroll, phraseEdit = UI.CreateMultilineEdit(actionPage, {
-            name        = "PersonaEnginePhraseScroll",
-            point       = { "TOPLEFT",     phraseLabel, "BOTTOMLEFT", -4, -6 },
-            point2      = { "BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, PHRASE_BOTTOM_OFFSET },
-            fontObject  = ChatFontNormal,
-            textScale   = GLOBAL_FONT_SCALE,
-            padding     = 20,
-            minHeight   = 200,
-            extraHeight = 600,
-            backdrop    = true,
-            outerBottomPad = 12, -- spacing between Phrase and Macro
+            name           = "PersonaEnginePhraseScroll",
+            point          = { "TOPLEFT",     phraseLabel, "BOTTOMLEFT", -4, -6 },
+            point2         = { "BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, PHRASE_BOTTOM_OFFSET },
+            fontObject     = ChatFontNormal,
+            textScale      = GLOBAL_FONT_SCALE,
+            padding        = 20,
+            minHeight      = 200,
+            extraHeight    = 600,
+            backdrop       = true,
+            outerBottomPad = 12,
         })
     else
-        -- Fallback: basically original implementation
         phraseScroll = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", actionPage, "UIPanelScrollFrameTemplate,BackdropTemplate")
         phraseScroll:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", -4, -6)
         phraseScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 130)
@@ -628,11 +594,11 @@ local function BuildConfigFrame()
     end
 
     StyleText(phraseEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
-    configFrame.phraseEdit  = phraseEdit
-    configFrame.phraseScroll= phraseScroll
+    configFrame.phraseEdit   = phraseEdit
+    configFrame.phraseScroll = phraseScroll
 
     ------------------------------------------------
-    -- Macro snippet: shared multiline widget near bottom
+    -- Macro snippet area
     ------------------------------------------------
     local MAX_MACRO_CHARS = 255
 
@@ -641,14 +607,14 @@ local function BuildConfigFrame()
         local PHRASE_MACRO_GAP = -14
 
         macroScroll, macroEdit = UI.CreateMultilineEdit(actionPage, {
-            point       = { "TOPLEFT",     configFrame.phraseScroll, "BOTTOMLEFT", 0, PHRASE_MACRO_GAP },
-            point2      = { "BOTTOMRIGHT", actionPage,               "BOTTOMRIGHT", -10, 40 },
-            fontObject  = ChatFontNormal,
-            textScale   = GLOBAL_FONT_SCALE,
-            padding     = 20,
-            minHeight   = 60,
-            extraHeight = 140,
-            backdrop    = true,
+            point            = { "TOPLEFT",     configFrame.phraseScroll, "BOTTOMLEFT", 0, PHRASE_MACRO_GAP },
+            point2           = { "BOTTOMRIGHT", actionPage,               "BOTTOMRIGHT", -10, 40 },
+            fontObject       = ChatFontNormal,
+            textScale        = GLOBAL_FONT_SCALE,
+            padding          = 20,
+            minHeight        = 60,
+            extraHeight      = 140,
+            backdrop         = true,
             onFocusHighlight = true,
         })
     else
@@ -694,21 +660,17 @@ local function BuildConfigFrame()
     StyleText(macroEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
     configFrame.macroEdit = macroEdit
 
-    -- Character counter: "0/255"
     local macroCountLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     macroCountLabel:SetPoint("LEFT", macroLabel, "RIGHT", 8, 0)
     macroCountLabel:SetText(string.format("0/%d", MAX_MACRO_CHARS))
     StyleText(macroCountLabel, "HINT")
     configFrame.macroCountLabel = macroCountLabel
 
-    -- Enforce max length + live counter
     macroEdit:HookScript("OnTextChanged", function(self)
         local text = self:GetText() or ""
         local len  = (strlenutf8 and strlenutf8(text)) or #text
 
         if len > MAX_MACRO_CHARS then
-            -- Trim down to max. For safety with UTF-8, shrink until in range.
-            -- (Most macro text will be ASCII, but this protects against multibyte.)
             local trimmed = text
             while len > MAX_MACRO_CHARS and trimmed ~= "" do
                 trimmed = trimmed:sub(1, -2)
@@ -724,7 +686,7 @@ local function BuildConfigFrame()
     end)
 
     ------------------------------------------------
-    -- Macro studio buttons (bottom-right)
+    -- Macro Studio buttons (bottom-right)
     ------------------------------------------------
     local saveMacroBtn = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
     saveMacroBtn:SetSize(120, 22)
@@ -742,60 +704,26 @@ local function BuildConfigFrame()
     browseMacroBtn:SetText("Browse...")
 
     ------------------------------------------------
-    -- Macro browser popup (created once)
+    -- Macro browser popup
     ------------------------------------------------
     if UI and UI.CreateMacroBrowser then
         configFrame.macroBrowser = UI.CreateMacroBrowser({
-            parent       = configFrame,
-            title        = "PersonaEngine \226\128\147 Macro Picker",
-            onMacroClick = function(name, body, icon)
+            parent = configFrame,
+            title  = "PersonaEngine – Macro Picker",
+            onMacroClick = function(name, body, icon, meta)
                 if macroNameEdit then macroNameEdit:SetText(name or "") end
                 if macroEdit     then macroEdit:SetText(body or "")    end
+
+                configFrame.currentMacroName  = name
+                configFrame.currentMacroScope = meta and meta.scope or nil
+                configFrame.currentMacroIndex = meta and meta.index or nil
             end,
         })
     end
 
     ------------------------------------------------
-    -- Button scripts
+    -- Save current config (action -> macro binding)
     ------------------------------------------------
-    saveMacroBtn:SetScript("OnClick", function()
-        if not (PE and PE.MacroStudio and configFrame.macroEdit) then return end
-
-        local macroName = macroNameEdit and macroNameEdit:GetText() or ""
-        local body      = configFrame.macroEdit:GetText() or ""
-        local icon      = currentAction and currentAction.icon or nil
-
-        PE.MacroStudio.SaveMacro(macroName, body, icon)
-    end)
-
-    pickupMacroBtn:SetScript("OnClick", function()
-        if not (PE and PE.MacroStudio and configFrame.macroEdit) then return end
-
-        local macroName = macroNameEdit and macroNameEdit:GetText() or ""
-        if macroName == "" then return end
-
-        -- Auto-save current macro body before pickup
-        local body = configFrame.macroEdit:GetText() or ""
-        local icon = currentAction and currentAction.icon or nil
-
-        if body ~= "" then
-            PE.MacroStudio.SaveMacro(macroName, body, icon)
-        end
-
-        PE.MacroStudio.PickupMacroByName(macroName)
-    end)
-
-    browseMacroBtn:SetScript("OnClick", function()
-        local browser = configFrame.macroBrowser
-        if browser and browser.Refresh then
-            browser:Refresh()
-            browser:Show()
-        end
-    end)
-
-    --------------------------------------------------
-    -- Save button (bottom-left) - saves config + macro
-    --------------------------------------------------
     local function SaveCurrentConfig()
         if not currentAction then
             spellInfoText:SetText("|cffff2020Pick a valid action first.|r")
@@ -806,6 +734,13 @@ local function BuildConfigFrame()
             return
         end
 
+        local macroName = macroNameEdit and macroNameEdit:GetText() or ""
+        if macroName == "" then
+            spellInfoText:SetText("|cffff2020Macro name required.|r")
+            return
+        end
+
+        -- Per-action config (legacy DB; also used as the cfg table we bind to macro)
         local cfg = PE.GetOrCreateActionConfig(currentAction.kind, currentAction.id)
         if not cfg then
             spellInfoText:SetText("|cffff2020Failed to get config for action.|r")
@@ -844,23 +779,73 @@ local function BuildConfigFrame()
             end
         end
         if #cfg.phrases == 0 then
-            cfg.phrases = { "\226\128\166internal monologue buffer overflow\226\128\166" }
+            cfg.phrases = { "…internal monologue buffer overflow…" }
         end
 
-        -- Macro save: keep Macro Studio as the source of truth
-        if PE.MacroStudio and configFrame.macroEdit and configFrame.macroNameEdit then
-            local macroName = configFrame.macroNameEdit:GetText() or ""
-            local body      = configFrame.macroEdit:GetText() or ""
-            if macroName ~= "" and body ~= "" then
-                local icon = currentAction and currentAction.icon or nil
-                PE.MacroStudio.SaveMacro(macroName, body, icon)
+        -- Metadata for macro binding
+        cfg._kind = currentAction.kind
+        cfg._id   = currentAction.id
+
+        -- Save macro body + ensure macro exists
+        local macroBody = configFrame.macroEdit and configFrame.macroEdit:GetText() or ""
+        if PE.MacroStudio and macroBody ~= "" then
+            local icon = currentAction and currentAction.icon or nil
+            local index, scope = PE.MacroStudio.SaveMacro(macroName, macroBody, icon)
+
+            if scope then
+                configFrame.currentMacroScope = scope
+            end
+            if index then
+                configFrame.currentMacroIndex = index
             end
         end
 
-        -- Visual confirmation
+        -- Bind this macro to this action config (macro-scoped persona DB)
+        if PE.MacroStudio and PE.MacroStudio.SavePersonaConfig then
+            local scope = configFrame.currentMacroScope or "character"
+            PE.MacroStudio.SavePersonaConfig(scope, macroName, cfg)
+        end
+
+        -- Refresh macro browser to pick up icon/name changes
+        if configFrame.macroBrowser and configFrame.macroBrowser.Refresh then
+            configFrame.macroBrowser:Refresh()
+        end
+
         spellInfoText:SetText((spellInfoText:GetText() or "") .. " |cff20ff20Saved.|r")
     end
 
+    ------------------------------------------------
+    -- Button scripts
+    ------------------------------------------------
+    saveMacroBtn:SetScript("OnClick", function()
+        SaveCurrentConfig()
+    end)
+
+    pickupMacroBtn:SetScript("OnClick", function()
+        -- Ensure what we pick up matches the editor
+        SaveCurrentConfig()
+
+        local macroName = macroNameEdit and macroNameEdit:GetText() or ""
+        if macroName == "" then
+            return
+        end
+
+        if PE.MacroStudio and PE.MacroStudio.PickupMacroByName then
+            PE.MacroStudio.PickupMacroByName(macroName)
+        end
+    end)
+
+    browseMacroBtn:SetScript("OnClick", function()
+        local browser = configFrame.macroBrowser
+        if browser and browser.Refresh then
+            browser:Refresh()
+            browser:Show()
+        end
+    end)
+
+    --------------------------------------------------
+    -- Save button (bottom-left) - same Save behavior
+    --------------------------------------------------
     local saveButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
     saveButton:SetSize(120, 24)
     saveButton:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 4)
@@ -872,8 +857,10 @@ end
 ----------------------------------------------------
 -- Public toggle API
 ----------------------------------------------------
+
 function PE.ToggleConfig()
     BuildConfigFrame()
+
     if configFrame:IsShown() then
         configFrame:Hide()
     else
@@ -884,6 +871,7 @@ end
 ----------------------------------------------------
 -- ChatEdit_InsertLink hook (spell link → spell box)
 ----------------------------------------------------
+
 do
     if ChatEdit_InsertLink then
         if not PE._OrigChatEdit_InsertLink then
@@ -924,6 +912,7 @@ end
 ----------------------------------------------------
 -- Module registration
 ----------------------------------------------------
+
 if PE.LogInit then
     PE.LogInit(MODULE)
 end
