@@ -150,8 +150,8 @@ local function BuildConfigFrame()
 
     if UI and UI.CreateWindow then
         configFrame = UI.CreateWindow({
-            id       = "Config",
-            title    = "Persona Engine – Artificer Config",
+			id    = "Config",
+			title = "Persona Engine – Config",
             width    = 700,
             height   = 750,
             minWidth = 520,
@@ -182,7 +182,7 @@ local function BuildConfigFrame()
         else
             title:SetPoint("TOPLEFT", 10, -5)
         end
-        title:SetText("Persona Engine – Artificer Config")
+        title:SetText("Persona Engine – Config")
         configFrame.title = title
         StyleText(title, "TITLE")
 
@@ -222,7 +222,7 @@ local function BuildConfigFrame()
     end
 
     local tab1 = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
-    tab1:SetText("Action Phrases & Macros")
+	tab1:SetText("Macro Studio")
     tab1:SetHeight(20)
     tab1:SetWidth(tab1:GetTextWidth() + 24)
     tab1:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 12, -30)
@@ -249,17 +249,34 @@ local function BuildConfigFrame()
     StyleText(settingsLabel, "HEADER")
 
     ------------------------------------------------
-    -- ACTION PAGE CONTENT
-    ------------------------------------------------
+	-- ACTION PAGE CONTENT
+	------------------------------------------------
 
-    ------------------------------------------------
-    -- Spell selector row
-    ------------------------------------------------
+	------------------------------------------------
+	-- Macro name row (top-most)
+	------------------------------------------------
+	local macroNameLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	macroNameLabel:SetPoint("TOPLEFT", actionPage, "TOPLEFT", 8, -4)
+	macroNameLabel:SetText("Macro Name (Max 16 Characters):")
+	StyleText(macroNameLabel, "LABEL")
 
-    local spellLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spellLabel:SetPoint("TOPLEFT", actionPage, "TOPLEFT", 8, -4)
-    spellLabel:SetText("Action name or ID:")
-    StyleText(spellLabel, "LABEL")
+	local macroNameEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
+	macroNameEdit:SetAutoFocus(false)
+	macroNameEdit:SetHeight(20)
+	macroNameEdit:SetMaxLetters(16)
+	macroNameEdit:SetPoint("LEFT", macroNameLabel, "RIGHT", 8, 0)
+	macroNameEdit:SetPoint("RIGHT", actionPage, "RIGHT", -8, 0)
+
+	configFrame.macroNameEdit = macroNameEdit
+
+	------------------------------------------------
+	-- Spell selector row
+	------------------------------------------------
+	local spellLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	spellLabel:SetPoint("TOPLEFT", macroNameLabel, "BOTTOMLEFT", 0, -18)
+	spellLabel:SetText("Action name or ID:")
+	StyleText(spellLabel, "LABEL")
+
 
     local spellEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
     spellEdit:SetAutoFocus(false)
@@ -273,12 +290,35 @@ local function BuildConfigFrame()
 
     -- Between label and Load
     spellEdit:ClearAllPoints()
-    spellEdit:SetPoint("LEFT",  spellLabel, "RIGHT", 8, 0)
-    spellEdit:SetPoint("RIGHT", loadButton, "LEFT", -32, 0)
+    spellEdit:SetPoint("LEFT", spellLabel, "RIGHT", 8, 0)
+	spellEdit:SetPoint("RIGHT", loadButton, "LEFT", -26, 0)
 
     local spellIcon = actionPage:CreateTexture(nil, "OVERLAY")
     spellIcon:SetSize(24, 24)
     spellIcon:SetPoint("LEFT", spellEdit, "RIGHT", 4, 0)
+	
+	local spellHelp = CreateFrame("Button", nil, actionPage)
+	spellHelp:SetSize(16, 16)
+	spellHelp:SetPoint("RIGHT", loadButton, "LEFT", -4, 0)
+
+	local helpTex = spellHelp:CreateTexture(nil, "OVERLAY")
+	helpTex:SetAllPoints()
+	helpTex:SetTexture("Interface\\FriendsFrame\\InformationIcon")
+
+	spellHelp:SetScript("OnEnter", function(self)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Loading an action", 1, 1, 1, true)
+		GameTooltip:AddLine("• Type a spell, item, or emote name or ID.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("• Or Shift+Left-click it from your spellbook, action bar, or bags.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("• Then click |cffffff00Load|r to pull it into the Macro Studio.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+
+	spellHelp:SetScript("OnLeave", function()
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+
 
     local spellInfoText = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     spellInfoText:SetPoint("TOPLEFT", spellLabel, "BOTTOMLEFT", 0, -4)
@@ -727,32 +767,6 @@ local function BuildConfigFrame()
 			macroCountLabel:SetFormattedText("%d/%d", len, MAX_MACRO_CHARS)
 		end
 	end)
-	
-	    ------------------------------------------------
-    -- Macro name field
-    ------------------------------------------------
-    local macroNameLabel, macroNameEdit
-
-    if UI and UI.CreateLabeledEdit then
-        macroNameLabel, macroNameEdit = UI.CreateLabeledEdit(actionPage, {
-            label = "Macro name:",
-            width = 220,
-            height = 20,
-            point = { "BOTTOMLEFT", macroScroll, "BOTTOMLEFT", 4, -26 },
-        })
-    else
-        macroNameLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        macroNameLabel:SetPoint("BOTTOMLEFT", macroScroll, "BOTTOMLEFT", 4, -26)
-        macroNameLabel:SetText("Macro name:")
-
-        macroNameEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
-        macroNameEdit:SetSize(220, 20)
-        macroNameEdit:SetAutoFocus(false)
-        macroNameEdit:SetPoint("LEFT", macroNameLabel, "RIGHT", 8, 0)
-    end
-
-    StyleText(macroNameLabel, "LABEL")
-    configFrame.macroNameEdit = macroNameEdit
 
     ------------------------------------------------
     -- Macro studio buttons
@@ -806,15 +820,25 @@ local function BuildConfigFrame()
     end)
 
     pickupMacroBtn:SetScript("OnClick", function()
-        if not (PE and PE.MacroStudio) then
-            return
-        end
+		if not (PE and PE.MacroStudio and configFrame.macroEdit) then
+			return
+		end
 
-        local macroName = macroNameEdit and macroNameEdit:GetText() or ""
-        if macroName ~= "" then
-            PE.MacroStudio.PickupMacroByName(macroName)
-        end
-    end)
+		local macroName = macroNameEdit and macroNameEdit:GetText() or ""
+		if macroName == "" then
+			return
+		end
+
+		-- Auto-save current macro body before pickup
+		local body = configFrame.macroEdit:GetText() or ""
+		local icon = currentAction and currentAction.icon or nil
+		if body ~= "" then
+			PE.MacroStudio.SaveMacro(macroName, body, icon)
+		end
+
+		PE.MacroStudio.PickupMacroByName(macroName)
+	end)
+
 
     browseMacroBtn:SetScript("OnClick", function()
         local browser = configFrame.macroBrowser
@@ -875,36 +899,34 @@ local function BuildConfigFrame()
                 table.insert(cfg.phrases, line)
             end
         end
-        if #cfg.phrases == 0 then
-            cfg.phrases = { "…internal monologue buffer overflow…" }
-        end
+            if #cfg.phrases == 0 then
+				cfg.phrases = { "…internal monologue buffer overflow…" }
+			end
 
-        -- Visual confirmation
-        spellInfoText:SetText((spellInfoText:GetText() or "") ..
-            " |cff20ff20Saved.|r")
-    end
+			-- Macro save: keep Macro Studio as the source of truth
+			if PE.MacroStudio and configFrame.macroEdit and configFrame.macroNameEdit then
+				local macroName = configFrame.macroNameEdit:GetText() or ""
+				local body      = configFrame.macroEdit:GetText() or ""
+				if macroName ~= "" and body ~= "" then
+					local icon = currentAction and currentAction.icon or nil
+					PE.MacroStudio.SaveMacro(macroName, body, icon)
+				end
+			end
+
+		-- Visual confirmation
+		spellInfoText:SetText((spellInfoText:GetText() or "") ..
+			" |cff20ff20Saved.|r")
+	end
+
 
 
     local saveButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
     saveButton:SetSize(120, 24)
     saveButton:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 4)
-    saveButton:SetText("Save Config")
+    saveButton:SetText("Save")
     saveButton:SetScript("OnClick", SaveCurrentConfig)
     configFrame.saveButton = saveButton
 
-    ------------------------------------------------
-    -- Hint (bottom-right)
-    ------------------------------------------------
-
-    local hint = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hint:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -4, 4)
-    hint:SetJustifyH("RIGHT")
-    hint:SetWidth(280)
-    hint:SetText(
-        "Type a spell name or ID and click |cffffff00Load|r.\n" ..
-        "Use the macro snippet to add Copporclang's quips to your own macros."
-    )
-    StyleText(hint, "HINT")
 end
 
 ----------------------------------------------------

@@ -18,8 +18,13 @@ end
 PE.MacroStudio = PE.MacroStudio or {}
 local MS = PE.MacroStudio
 
-local MAX_MACRO_CHARS = 255
-local DEFAULT_ICON_ID = 134400 -- question-mark style icon
+local MAX_MACRO_CHARS       = 255
+local MAX_MACRO_NAME_CHARS  = 16
+local DEFAULT_ICON_ID       = 134400 -- question-mark icon
+
+----------------------------------------------------
+-- UTF-8 helpers (name/body safety)
+----------------------------------------------------
 
 local function utf8len(s)
     if strlenutf8 then
@@ -97,7 +102,10 @@ end
 
 function MS.SaveMacro(macroName, macroBody, iconTexture)
     macroName = (macroName and macroName:match("^%s*(.-)%s*$")) or ""
+    macroName = utf8safe_sub(macroName, MAX_MACRO_NAME_CHARS)
+
     macroBody = macroBody or ""
+    macroBody = utf8safe_sub(macroBody, MAX_MACRO_CHARS)
 
     if macroName == "" then
         if UIErrorsFrame then
@@ -105,9 +113,6 @@ function MS.SaveMacro(macroName, macroBody, iconTexture)
         end
         return
     end
-
-    -- Enforce 255-char limit just in case
-    macroBody = utf8safe_sub(macroBody, MAX_MACRO_CHARS)
 
     local icon = iconTexture or DEFAULT_ICON_ID
 
@@ -138,7 +143,12 @@ function MS.SaveMacro(macroName, macroBody, iconTexture)
     CreateMacro(macroName, icon, macroBody, useCharacter)
 
     if PE.Log then
-        PE.Log(3, "MacroStudio: Created macro", macroName, useCharacter and "(character)" or "(global)")
+        PE.Log(
+            3,
+            "MacroStudio: Created macro",
+            macroName,
+            useCharacter and "(character)" or "(global)"
+        )
     end
 end
 
