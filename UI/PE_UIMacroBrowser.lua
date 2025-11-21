@@ -1,6 +1,6 @@
 -- ##################################################
 -- UI/PE_UIMacroBrowser.lua
--- Popup window listing all macros with icons
+-- Popup window listing account + character macros
 -- ##################################################
 
 local MODULE = "UIMacroBrowser"
@@ -17,15 +17,20 @@ if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
 
+----------------------------------------------------
+-- Constants (fallbacks if globals missing)
+----------------------------------------------------
+
+local MAX_ACCOUNT = _G.MAX_ACCOUNT_MACROS    or 120
+local MAX_CHAR    = _G.MAX_CHARACTER_MACROS  or 18
 
 ----------------------------------------------------
--- Macro Browser widget
+-- Macro Browser
 ----------------------------------------------------
--- UI.CreateMacroBrowser(opts) -> frame
---   opts.parent      : parent frame (default UIParent)
---   opts.onMacroClick: function(name, body, icon, meta) called on left-click
---       meta = { index = <macroIndex>, scope = "global"/"character" }
---   opts.title       : window title (optional)
+-- UI.CreateMacroBrowser(opts)
+--   opts.parent
+--   opts.onMacroClick(name, body, icon, meta { index, scope })
+--   opts.title
 
 function UI.CreateMacroBrowser(opts)
     opts = opts or {}
@@ -40,14 +45,12 @@ function UI.CreateMacroBrowser(opts)
     f:SetFrameLevel(120)
     f:Hide()
 
-    -- Movable
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
     f:SetScript("OnDragStop",  f.StopMovingOrSizing)
 
-    -- Title
     local titleFS = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     if f.TitleBg then
         titleFS:SetPoint("LEFT", f.TitleBg, "LEFT", 5, 0)
@@ -57,12 +60,11 @@ function UI.CreateMacroBrowser(opts)
     titleFS:SetText(titleText)
     f.title = titleFS
 
-    -- Close button (single)
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, -5)
 
     ------------------------------------------------
-    -- Scope tabs + usage text
+    -- Tabs + usage text
     ------------------------------------------------
 
     f.currentScope = "global"
@@ -86,30 +88,24 @@ function UI.CreateMacroBrowser(opts)
     tabGeneral:SetSize(80, 20)
     tabGeneral:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -26)
     tabGeneral:SetText("General")
-    tabGeneral:SetScript("OnClick", function()
-        SetScope("global")
-    end)
+    tabGeneral:SetScript("OnClick", function() SetScope("global") end)
     tabButtons.global = tabGeneral
 
     local tabChar = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     tabChar:SetSize(120, 20)
     tabChar:SetPoint("LEFT", tabGeneral, "RIGHT", 6, 0)
-
     local charName = UnitName("player") or "Character"
     tabChar:SetText(charName)
-    tabChar:SetScript("OnClick", function()
-        SetScope("character")
-    end)
+    tabChar:SetScript("OnClick", function() SetScope("character") end)
     tabButtons.character = tabChar
 
-    -- Usage text ("N/N")
     local usageFS = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     usageFS:SetPoint("TOPRIGHT", f, "TOPRIGHT", -40, -28)
     usageFS:SetJustifyH("RIGHT")
     f.usageText = usageFS
 
     ------------------------------------------------
-    -- Scrollable icon grid
+    -- Scroll grid
     ------------------------------------------------
 
     local scroll = CreateFrame("ScrollFrame", "PersonaEngine_MacroBrowserScroll", f, "UIPanelScrollFrameTemplate")
@@ -125,11 +121,6 @@ function UI.CreateMacroBrowser(opts)
     local function ClearButtons()
         for _, b in ipairs(f._buttons) do
             b:Hide()
-            b:SetScript("OnEnter",     nil)
-            b:SetScript("OnLeave",     nil)
-            b:SetScript("OnClick",     nil)
-            b:SetScript("OnDragStart", nil)
-            b:SetScript("OnDragStop",  nil)
         end
         wipe(f._buttons)
     end
@@ -150,30 +141,30 @@ function UI.CreateMacroBrowser(opts)
     end
 
     ------------------------------------------------
-    -- Refresh: rebuild grid based on current scope
+    -- Refresh
     ------------------------------------------------
 
     function f:Refresh()
         ClearButtons()
 
-        local numGlobal, numChar, maxGlobal, maxChar = GetNumMacros()
-        local scope = self.currentScope or "global"
+        local numGlobal, numChar = GetNumMacros()
+        numGlobal = numGlobal or 0
+        numChar   = numChar   or 0
 
-        local startIndex, endIndex, isCharScope, used, maxSlots
+        local scope = self.currentScope or "global"
+        local used, maxSlots, indexStart, indexEnd
 
         if scope == "character" then
-            startIndex  = numGlobal + 1
-            endIndex    = numGlobal + numChar
-            isCharScope = true
-            used        = numChar
-            maxSlots    = maxChar
+            used      = numChar
+            maxSlots  = MAX_CHAR
+            indexStart = MAX_ACCOUNT + 1
+            indexEnd   = MAX_ACCOUNT + MAX_CHAR
         else
-            startIndex  = 1
-            endIndex    = numGlobal
-            isCharScope = false
-            used        = numGlobal
-            maxSlots    = maxGlobal
-            scope       = "global"
+            scope      = "global"
+            used       = numGlobal
+            maxSlots   = MAX_ACCOUNT
+            indexStart = 1
+            indexEnd   = MAX_ACCOUNT
         end
 
         if self.usageText then
@@ -181,16 +172,14 @@ function UI.CreateMacroBrowser(opts)
             self.usageText:SetFormattedText("%s: %d/%d", label, used or 0, maxSlots or 0)
         end
 
-        local cols        = 2
-        local padX        = 8
-        local padY        = 6
-        local colWidth    = 240
-        local rowHeight   = 44
-        local row         = 0
-        local col         = 0
+        local cols      = 2
+        local colWidth  = 240
+        local rowHeight = 44
+        local row       = 0
+        local col       = 0
         local lastRowBottom = 0
 
-        for index = startIndex, endIndex do
+        for index = indexStart, indexEnd do
             local name, iconTexture = GetMacroInfo(index)
             if name and name ~= "" then
                 local btn = NewButton(content)
@@ -207,25 +196,24 @@ function UI.CreateMacroBrowser(opts)
                 local x = (col - 1) * colWidth
                 local y = -((row - 1) * rowHeight)
 
+                btn:ClearAllPoints()
                 btn:SetPoint("TOPLEFT", content, "TOPLEFT", x, y)
                 btn.icon:SetTexture(iconTexture or 134400)
                 btn.nameFS:SetText(name)
 
                 btn.macroIndex = index
                 btn.macroName  = name
-                btn.scope      = isCharScope and "character" or "global"
+                btn.scope      = scope
 
                 btn:SetScript("OnEnter", function(selfBtn)
                     if not GameTooltip then return end
                     GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
                     GameTooltip:SetText(name, 1, 1, 1, true)
-
                     local bodyText = GetMacroBody(selfBtn.macroIndex) or ""
                     if bodyText ~= "" then
                         GameTooltip:AddLine(" ", 0, 0, 0, false)
                         GameTooltip:AddLine(bodyText, 0.8, 0.8, 0.8, true)
                     end
-
                     GameTooltip:Show()
                 end)
 
@@ -236,11 +224,8 @@ function UI.CreateMacroBrowser(opts)
                 btn:RegisterForDrag("LeftButton")
                 btn:SetScript("OnDragStart", function(selfBtn)
                     PickupMacro(selfBtn.macroIndex)
-                    -- Do NOT hide the popup; user may drop multiple times.
                 end)
-                btn:SetScript("OnDragStop", function()
-                    -- Default Blizzard cursor handling is fine.
-                end)
+                btn:SetScript("OnDragStop", function() end)
 
                 btn:SetScript("OnClick", function(selfBtn)
                     local bodyText = GetMacroBody(selfBtn.macroIndex) or ""
@@ -251,14 +236,9 @@ function UI.CreateMacroBrowser(opts)
                             selfBtn.macroName,
                             bodyText,
                             tex,
-                            {
-                                index = selfBtn.macroIndex,
-                                scope = selfBtn.scope,
-                            }
+                            { index = selfBtn.macroIndex, scope = selfBtn.scope }
                         )
                     end
-
-                    -- Clicking a macro hides the popup (per spec)
                     f:Hide()
                 end)
 
@@ -266,16 +246,14 @@ function UI.CreateMacroBrowser(opts)
             end
         end
 
-        local height = math.abs(lastRowBottom) + rowHeight + padY
+        local height = math.abs(lastRowBottom) + rowHeight + 6
         content:SetHeight(math.max(height, 1))
     end
 
-    -- Default scope
     SetScope("global")
 
     return f
 end
-
 
 ----------------------------------------------------
 -- Module registration

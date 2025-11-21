@@ -1,11 +1,11 @@
 -- ##################################################
 -- PE_ConfigUI.lua
--- Persona Engine spell-bubble configuration UI
+-- Persona Engine configuration UI (macro-centric)
 -- ##################################################
 
 local MODULE = "ConfigUI"
 local PE     = PE
-local UI     = PE and PE.UI -- shorthand for widgets
+local UI     = PE and PE.UI
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -17,37 +17,36 @@ if PE.LogLoad then
 end
 
 ----------------------------------------------------
--- Text style / theme
+-- Text styling
 ----------------------------------------------------
 
--- Global knob: bump this to resize *all* config text
-local GLOBAL_FONT_SCALE = 1.0 -- e.g. 0.9, 1.0, 1.1
+local GLOBAL_FONT_SCALE = 1.0
 
 local TEXT_STYLES = {
     TITLE = {
-        template  = "GameFontHighlight",
+        template   = "GameFontHighlight",
         sizeOffset = 0,
-        color     = { 1.0, 0.96, 0.41, 1.0 }, -- gold
+        color      = { 1.0, 0.96, 0.41, 1.0 },
     },
     HEADER = {
-        template  = "GameFontNormalLarge",
+        template   = "GameFontNormalLarge",
         sizeOffset = 0,
-        color     = { 1.0, 0.82, 0.0, 1.0 },
+        color      = { 1.0, 0.82, 0.0, 1.0 },
     },
     LABEL = {
-        template  = "GameFontNormal",
+        template   = "GameFontNormal",
         sizeOffset = 0,
-        color     = { 0.90, 0.90, 0.90, 1.0 },
+        color      = { 0.90, 0.90, 0.90, 1.0 },
     },
     HINT = {
-        template  = "GameFontHighlightSmall",
+        template   = "GameFontHighlightSmall",
         sizeOffset = 0,
-        color     = { 0.75, 0.75, 0.75, 1.0 },
+        color      = { 0.75, 0.75, 0.75, 1.0 },
     },
     EMPHASIS = {
-        template  = "GameFontHighlight",
+        template   = "GameFontHighlight",
         sizeOffset = 0,
-        color     = { 1.0, 1.0, 1.0, 1.0 },
+        color      = { 1.0, 1.0, 1.0, 1.0 },
     },
 }
 
@@ -69,8 +68,7 @@ local function StyleText(widget, styleKey, overrides)
 
     local font, size, flags = widget:GetFont()
     if font and size then
-        local newSize = size * scale + sizeOffset
-        widget:SetFont(font, newSize, flags)
+        widget:SetFont(font, size * scale + sizeOffset, flags)
     end
 
     if color then
@@ -79,42 +77,52 @@ local function StyleText(widget, styleKey, overrides)
 end
 
 ----------------------------------------------------
--- Action lookup wrapper (spell / item / emote)
+-- Local helpers
 ----------------------------------------------------
 
 local function GetActionByInput(input)
     if not input or input == "" then return nil end
-    if not PE or not PE.ResolveActionFromInput then return nil end
+    if not PE.ResolveActionFromInput then return nil end
     return PE.ResolveActionFromInput(input)
 end
 
-----------------------------------------------------
--- Icon database (for suggestions + picker)
-----------------------------------------------------
-
+-- Build a DB of icon entries usable by the icon picker & suggestions.
 local function BuildIconDB()
     if not GetNumMacroIcons or not GetMacroIconInfo then
         return {}
     end
 
-    local icons = {}
-    local numIcons = GetNumMacroIcons()
+    local icons   = {}
+    local numIcons = GetNumMacroIcons() or 0
+
     for i = 1, numIcons do
         local tex = GetMacroIconInfo(i)
-        if tex and tex ~= "" then
-            local name = tex:match("([^\\]+)$") or tex
+        if tex then
+            local texture = tex
+            local name
+
+            if type(tex) == "number" then
+                -- FileID only – use numeric name, suggestions based on that.
+                name = tostring(tex)
+            else
+                -- Path string – take last path component.
+                name = tex:match("([^\\]+)$") or tex
+            end
+
             local lower = string.lower(name)
+
             local kind = "OTHER"
             if lower:find("^inv_") then
                 kind = "ITEM"
             elseif lower:find("^spell_") then
                 kind = "SPELL"
             end
+
             table.insert(icons, {
                 index   = i,
-                texture = tex,
-                name    = name,   -- e.g. INV_Misc_Bag_03
-                lower   = lower,  -- lowercase for search
+                texture = texture,
+                name    = name,
+                lower   = lower,
                 kind    = kind,
             })
         end
@@ -124,7 +132,7 @@ local function BuildIconDB()
 end
 
 ----------------------------------------------------
--- Config frame construction
+-- Config frame
 ----------------------------------------------------
 
 local configFrame
@@ -133,25 +141,24 @@ local function BuildConfigFrame()
     if configFrame then return end
 
     ------------------------------------------------
-    -- Main window via UI widget (persistent + resizable)
+    -- Window
     ------------------------------------------------
 
     if UI and UI.CreateWindow then
         configFrame = UI.CreateWindow({
-            id      = "Config",
-            title   = "Persona Engine \226\128\147 Config",
-            width   = 700,
-            height  = 750,
-            minWidth  = 520,
+            id       = "Config",
+            title    = "Persona Engine – Config",
+            width    = 700,
+            height   = 750,
+            minWidth = 520,
             minHeight = 430,
-            strata  = "DIALOG",
-            level   = 100,
+            strata   = "DIALOG",
+            level    = 100,
         })
         if configFrame.title then
             StyleText(configFrame.title, "TITLE")
         end
     else
-        -- Fallback: simple frame if widgets are missing
         configFrame = CreateFrame("Frame", "PersonaEngineConfigFrame", UIParent, "BasicFrameTemplateWithInset")
         configFrame:SetSize(700, 750)
         configFrame:SetPoint("CENTER")
@@ -169,41 +176,41 @@ local function BuildConfigFrame()
         else
             title:SetPoint("TOPLEFT", 10, -5)
         end
-        title:SetText("Persona Engine \226\128\147 Config")
-        configFrame.title = title
+        title:SetText("Persona Engine – Config")
         StyleText(title, "TITLE")
+        configFrame.title = title
 
         configFrame:Hide()
     end
 
-    -- Backwards-compat alias
     if not _G["PersonaEngineConfigFrame"] then
         _G["PersonaEngineConfigFrame"] = configFrame
     end
 
     ------------------------------------------------
-    -- Tabs & pages
+    -- Tabs
     ------------------------------------------------
 
-    local tabButtons = {}
+    local actionPage   = CreateFrame("Frame", nil, configFrame)
+    local settingsPage = CreateFrame("Frame", nil, configFrame)
 
-    local actionPage = CreateFrame("Frame", nil, configFrame)
     actionPage:SetPoint("TOPLEFT",     configFrame, "TOPLEFT",     8,  -60)
     actionPage:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -8,  8)
 
-    local settingsPage = CreateFrame("Frame", nil, configFrame)
-    settingsPage:SetPoint("TOPLEFT",     actionPage, "TOPLEFT",     0, 0)
-    settingsPage:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", 0, 0)
+    settingsPage:SetPoint("TOPLEFT",     actionPage, "TOPLEFT")
+    settingsPage:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT")
     settingsPage:Hide()
 
-    local function SetActivePage(index)
-        for i, tab in ipairs(tabButtons) do
-            if i == index then
-                tab:LockHighlight()
-                if tab.page then tab.page:Show() end
+    local tabButtons = {}
+
+    local function SetActivePage(idx)
+        for i, btn in ipairs(tabButtons) do
+            if i == idx then
+                btn:LockHighlight()
+                if btn.page then btn.page:Show() end
             else
-                tab:UnlockHighlight()
-                if tab.page then tab.page:Hide() end
+                btn:UnlockHighlight()
+                if btn.page then btn.page:Hide() end
             end
         end
     end
@@ -215,6 +222,7 @@ local function BuildConfigFrame()
     tab1:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 12, -30)
     tab1.page = actionPage
     tab1:SetScript("OnClick", function() SetActivePage(1) end)
+    tabButtons[1] = tab1
 
     local tab2 = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
     tab2:SetText("Settings")
@@ -223,24 +231,17 @@ local function BuildConfigFrame()
     tab2:SetPoint("LEFT", tab1, "RIGHT", 6, 0)
     tab2.page = settingsPage
     tab2:SetScript("OnClick", function() SetActivePage(2) end)
-
-    tabButtons[1] = tab1
     tabButtons[2] = tab2
 
     SetActivePage(1)
 
-    -- Placeholder Settings page content
     local settingsLabel = settingsPage:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     settingsLabel:SetPoint("TOPLEFT", 8, -8)
     settingsLabel:SetText("Persona Engine Settings (coming soon)")
     StyleText(settingsLabel, "HEADER")
 
     ------------------------------------------------
-    -- ACTION PAGE CONTENT
-    ------------------------------------------------
-
-    ------------------------------------------------
-    -- Macro name row (top-most)
+    -- Macro name row
     ------------------------------------------------
 
     local macroNameLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -253,88 +254,80 @@ local function BuildConfigFrame()
     macroNameEdit:SetHeight(20)
     macroNameEdit:SetMaxLetters(16)
     macroNameEdit:SetPoint("LEFT",  macroNameLabel, "RIGHT", 8, 0)
-    macroNameEdit:SetPoint("RIGHT", actionPage,     "RIGHT", -8, 0)
+    macroNameEdit:SetPoint("RIGHT", actionPage, "RIGHT", -8, 0)
     configFrame.macroNameEdit = macroNameEdit
 
     ------------------------------------------------
-    -- Icon / primary-action row
+    -- Icon row (icon + optional primary action via Load)
     ------------------------------------------------
 
-    local spellLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spellLabel:SetPoint("TOPLEFT", macroNameLabel, "BOTTOMLEFT", 0, -18)
-    spellLabel:SetText("Icon Name or ID:")
-    StyleText(spellLabel, "LABEL")
-
-    local spellEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
-    spellEdit:SetAutoFocus(false)
-    spellEdit:SetHeight(20)
-    configFrame.spellEdit = spellEdit
+    local iconLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    iconLabel:SetPoint("TOPLEFT", macroNameLabel, "BOTTOMLEFT", 0, -18)
+    iconLabel:SetText("Icon Name or ID:")
+    StyleText(iconLabel, "LABEL")
 
     local loadButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
     loadButton:SetSize(70, 22)
-    loadButton:SetPoint("TOPRIGHT", actionPage, "TOPRIGHT", -4, -2)
+    -- IMPORTANT: anchor this on the icon row, not the macro name row
+    loadButton:SetPoint("TOPRIGHT", actionPage, "TOPRIGHT", -4, -26)
     loadButton:SetText("Load")
 
-    -- Between label and Load
-    spellEdit:ClearAllPoints()
-    spellEdit:SetPoint("LEFT",  spellLabel,  "RIGHT",  8, 0)
-    spellEdit:SetPoint("RIGHT", loadButton,  "LEFT",  -26, 0)
-
-    -- Icon texture + clickable overlay
-    local spellIcon = actionPage:CreateTexture(nil, "OVERLAY")
-    spellIcon:SetSize(24, 24)
-    spellIcon:SetPoint("LEFT", spellEdit, "RIGHT", 4, 0)
-    spellIcon:SetTexture(134400) -- default question mark
-
-    -- Clickable button on top of icon
-    local iconButton = CreateFrame("Button", nil, actionPage)
-    iconButton:SetSize(24, 24)
-    iconButton:SetPoint("CENTER", spellIcon, "CENTER")
-    iconButton:EnableMouse(true)
-
-    ------------------------------------------------
-    -- Info icon for the row
-    ------------------------------------------------
-
-    local spellHelp = CreateFrame("Button", nil, actionPage)
-    spellHelp:SetSize(16, 16)
-    spellHelp:SetPoint("RIGHT", loadButton, "LEFT", -4, 0)
-
-    local helpTex = spellHelp:CreateTexture(nil, "OVERLAY")
+    local iconHelp = CreateFrame("Button", nil, actionPage)
+    iconHelp:SetSize(16, 16)
+    iconHelp:SetPoint("RIGHT", loadButton, "LEFT", -4, 0)
+    local helpTex = iconHelp:CreateTexture(nil, "OVERLAY")
     helpTex:SetAllPoints()
     helpTex:SetTexture("Interface\\FriendsFrame\\InformationIcon")
 
-    spellHelp:SetScript("OnEnter", function(self)
+    local iconEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
+    iconEdit:SetAutoFocus(false)
+    iconEdit:SetHeight(20)
+    iconEdit:SetPoint("LEFT",  iconLabel, "RIGHT", 8, 0)
+    iconEdit:SetPoint("RIGHT", iconHelp,  "LEFT", -26, 0)
+    configFrame.spellEdit = iconEdit
+
+    local iconTexture = actionPage:CreateTexture(nil, "OVERLAY")
+    iconTexture:SetSize(24, 24)
+    iconTexture:SetPoint("LEFT", iconEdit, "RIGHT", 4, 0)
+    iconTexture:SetTexture(134400) -- question mark
+    configFrame.iconTexture = iconTexture
+    configFrame.selectedIconTexture = 134400
+
+    local iconButton = CreateFrame("Button", nil, actionPage)
+    iconButton:SetSize(24, 24)
+    iconButton:SetPoint("CENTER", iconTexture, "CENTER")
+    iconButton:EnableMouse(true)
+
+    iconHelp:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Choosing an icon", 1, 1, 1, true)
+        GameTooltip:SetText("Icon & primary action", 1, 1, 1, true)
         GameTooltip:AddLine("• Type an icon name like |cffffff00inv_misc_bag_03|r or a file ID.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("• Or Shift+Left-click a spell, item, or macro to copy its icon.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("• Click |cffffff00Load|r to pull icon and primary action from text.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("• Or click the icon to open the full icon picker.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("• Shift-click a spell or item into this box to copy its name.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("• Click |cffffff00Load|r to bind a primary spell or item.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("• Click the icon to open the full icon selector.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
-    spellHelp:SetScript("OnLeave", function()
+    iconHelp:SetScript("OnLeave", function()
         if GameTooltip then GameTooltip:Hide() end
     end)
 
-    local spellInfoText = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    spellInfoText:SetPoint("TOPLEFT", spellLabel, "BOTTOMLEFT", 0, -4)
-    spellInfoText:SetWidth(420)
-    spellInfoText:SetJustifyH("LEFT")
-    StyleText(spellInfoText, "HINT")
+    local iconInfoText = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    iconInfoText:SetPoint("TOPLEFT", iconLabel, "BOTTOMLEFT", 0, -4)
+    iconInfoText:SetWidth(420)
+    iconInfoText:SetJustifyH("LEFT")
+    StyleText(iconInfoText, "HINT")
+    iconInfoText:SetText("|cffff2020No icon / action provided.|r")
 
     ------------------------------------------------
-    -- Icon suggestions dropdown (below Icon Name or ID)
+    -- Icon suggestions frame
     ------------------------------------------------
 
-    local iconDB            = nil
-    local suggestionFrame   = CreateFrame("Frame", nil, actionPage, "BackdropTemplate")
-    suggestionFrame:SetPoint("TOPLEFT",  spellEdit, "BOTTOMLEFT", 0, -2)
-    suggestionFrame:SetPoint("TOPRIGHT", spellEdit, "BOTTOMRIGHT", 0, -2)
+    local iconDB
+    local suggestionFrame = CreateFrame("Frame", nil, actionPage, "BackdropTemplate")
+    suggestionFrame:SetPoint("TOPLEFT",  iconEdit, "BOTTOMLEFT", 0, -2)
+    suggestionFrame:SetPoint("TOPRIGHT", iconEdit, "BOTTOMRIGHT", 0, -2)
     suggestionFrame:SetHeight(1)
-    suggestionFrame:Hide()
-
     suggestionFrame:SetBackdrop({
         bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -343,19 +336,18 @@ local function BuildConfigFrame()
         edgeSize = 12,
         insets   = { left = 3, right = 3, top = 3, bottom = 3 },
     })
+    suggestionFrame:Hide()
+    suggestionFrame:SetFrameStrata("DIALOG")
+    suggestionFrame:SetFrameLevel(iconEdit:GetFrameLevel() + 5)
 
     local suggestionButtons = {}
     local activeSuggestions = {}
 
     local function ApplyIconChoice(data)
         if not data then return end
-        configFrame.selectedIconTexture = data.texture
-        spellIcon:SetTexture(data.texture or 134400)
-        if spellEdit and not spellEdit:HasFocus() then
-            spellEdit:SetText(data.name or "")
-        else
-            spellEdit:SetText(data.name or "")
-        end
+        configFrame.selectedIconTexture = data.texture or 134400
+        iconTexture:SetTexture(configFrame.selectedIconTexture)
+        iconEdit:SetText(data.name or "")
         suggestionFrame:Hide()
     end
 
@@ -396,11 +388,8 @@ local function BuildConfigFrame()
     end
 
     local function RefreshSuggestions()
-        if not spellEdit or not suggestionFrame then return end
-
-        local text = spellEdit:GetText() or ""
+        local text = iconEdit:GetText() or ""
         text = text:gsub("^%s+", ""):gsub("%s+$", "")
-
         if text == "" then
             suggestionFrame:Hide()
             return
@@ -446,72 +435,66 @@ local function BuildConfigFrame()
         suggestionFrame:Show()
     end
 
-    spellEdit:SetScript("OnTextChanged", function()
+    iconEdit:SetScript("OnTextChanged", function()
         RefreshSuggestions()
     end)
 
     ------------------------------------------------
-    -- Primary action tracking
+    -- Primary action state
     ------------------------------------------------
 
     local currentAction -- { kind, id, name, icon }
 
     local function LoadActionByInput()
-        if not PE.GetOrCreateActionConfig then
-            spellInfoText:SetText("|cffff2020Action config system not ready.|r")
-            return
-        end
-
-        local txt = spellEdit:GetText()
+        local txt = iconEdit:GetText()
         if not txt or txt == "" then
-            spellInfoText:SetText("|cffff2020No icon / action provided.|r")
-            spellIcon:SetTexture(134400)
+            iconInfoText:SetText("|cffff2020No icon / action provided.|r")
             currentAction = nil
             return
         end
 
         local action = GetActionByInput(txt)
-        if not action then
-            spellInfoText:SetText("|cffff2020Unknown spell/item/emote for primary action.|r")
-            -- Still allow icon suggestions / manual icon
+
+        -- IMPORTANT:
+        -- Only accept real SPELL / ITEM as a "primary action".
+        -- Unknown stuff should not turn into an emote and certainly
+        -- should not generate `/e inv_misc_bag_3`.
+        if not action or (action.kind == "emote") then
+            currentAction = nil
+            iconInfoText:SetText("|cffffff00Icon selected.|r No spell or item bound as a primary action.")
             return
         end
 
         currentAction = action
 
-        -- Seed icon from the action if user hasn't chosen a custom one
         if not configFrame.selectedIconTexture then
-            spellIcon:SetTexture(action.icon or 134400)
+            configFrame.selectedIconTexture = action.icon or 134400
+            iconTexture:SetTexture(configFrame.selectedIconTexture)
         end
 
-        local summary = PE.FormatActionSummary and PE.FormatActionSummary(action) or string.format(
-            "Primary action: |cffffff00%s|r (%s:%s)",
-            tostring(action.name or "?"),
-            tostring(action.kind or "?"),
-            tostring(action.id or "?")
-        )
+        local summary = PE.FormatActionSummary and PE.FormatActionSummary(action)
+        if not summary then
+            summary = string.format(
+                "Spell/Item: |cffffff00%s|r (ID %s)",
+                tostring(action.name or "?"),
+                tostring(action.id or "?")
+            )
+        end
+        iconInfoText:SetText(summary)
 
-        spellInfoText:SetText(summary)
-
-        -- Pull config from DB (per-action) to seed UI
         local cfg = PE.GetOrCreateActionConfig(action.kind, action.id)
 
         local triggerModes = PE.TRIGGER_MODES or {
-            ON_PRESS       = "On Button Press",
-            ON_CAST        = "On Cast",
-            ON_CD          = "When Cooldown Starts",
-            ON_READY       = "When Cooldown Ready",
-            ON_BUFF_ACTIVE = "While Buff Is Active",
-            ON_NOT_GCD     = "When GCD Is Free",
+            ON_PRESS = "On Button Press",
+            ON_CAST  = "On Cast",
+            ON_CD    = "When Cooldown Starts",
+            ON_READY = "When Cooldown Ready",
         }
 
         UIDropDownMenu_SetSelectedValue(configFrame.triggerDrop, cfg.trigger)
-        UIDropDownMenu_SetText(
-            configFrame.triggerDrop,
-            triggerModes[cfg.trigger] or triggerModes.ON_CAST or "On Cast"
-        )
+        UIDropDownMenu_SetText(configFrame.triggerDrop, triggerModes[cfg.trigger] or triggerModes.ON_CAST or "On Cast")
 
-        configFrame.chanceEdit:SetNumber(cfg.chance or 10)
+        configFrame.chanceEdit:SetNumber(cfg.chance or 5)
 
         local chanCfg = cfg.channels or {}
         configFrame.channelCheckboxes.SAY  :SetChecked(chanCfg.SAY)
@@ -526,14 +509,11 @@ local function BuildConfigFrame()
         if cfg.phrases then
             for i, line in ipairs(cfg.phrases) do
                 buf = buf .. line
-                if i < #cfg.phrases then
-                    buf = buf .. "\n"
-                end
+                if i < #cfg.phrases then buf = buf .. "\n" end
             end
         end
         configFrame.phraseEdit:SetText(buf)
 
-        -- Macro snippet: build default using current macro name (if any)
         if configFrame.macroEdit and PE.MacroStudio and PE.MacroStudio.BuildDefaultMacroForAction then
             local macroText = PE.MacroStudio.BuildDefaultMacroForAction(
                 action,
@@ -548,7 +528,7 @@ local function BuildConfigFrame()
     loadButton:SetScript("OnClick", LoadActionByInput)
 
     ------------------------------------------------
-    -- Icon picker window
+    -- Icon picker popup
     ------------------------------------------------
 
     local iconPickerFrame
@@ -597,7 +577,7 @@ local function BuildConfigFrame()
 
         iconPickerFrame:Hide()
 
-        -- Filter dropdown
+        -- Filter / search
         local filterLabel = iconPickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         filterLabel:SetPoint("TOPLEFT", iconPickerFrame, "TOPLEFT", 12, -32)
         filterLabel:SetText("Filter:")
@@ -606,7 +586,6 @@ local function BuildConfigFrame()
         local filterDrop = CreateFrame("Frame", "PersonaEngine_IconFilterDrop", iconPickerFrame, "UIDropDownMenuTemplate")
         filterDrop:SetPoint("LEFT", filterLabel, "RIGHT", -10, -4)
 
-        -- Search box
         local searchLabel = iconPickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         searchLabel:SetPoint("TOPRIGHT", iconPickerFrame, "TOPRIGHT", -210, -32)
         searchLabel:SetText("Search:")
@@ -615,12 +594,12 @@ local function BuildConfigFrame()
         local searchEdit = CreateFrame("EditBox", nil, iconPickerFrame, "InputBoxTemplate")
         searchEdit:SetAutoFocus(false)
         searchEdit:SetHeight(20)
-        searchEdit:SetPoint("LEFT",  searchLabel, "RIGHT", 6, 0)
+        searchEdit:SetPoint("LEFT", searchLabel, "RIGHT", 6, 0)
         searchEdit:SetPoint("RIGHT", iconPickerFrame, "RIGHT", -16, 0)
 
-        -- Scroll + grid
+        -- Scroll area
         local scroll = CreateFrame("ScrollFrame", "PersonaEngine_IconPickerScroll", iconPickerFrame, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT",  iconPickerFrame, "TOPLEFT",  12, -60)
+        scroll:SetPoint("TOPLEFT",     iconPickerFrame, "TOPLEFT",  12, -60)
         scroll:SetPoint("BOTTOMRIGHT", iconPickerFrame, "BOTTOMRIGHT", -30, 50)
 
         local content = CreateFrame("Frame", nil, scroll)
@@ -632,8 +611,8 @@ local function BuildConfigFrame()
         iconPickerFrame._search  = ""
         iconPickerFrame._selectedIconData = nil
 
-        local function NewIconButton(parent)
-            local btn = CreateFrame("Button", nil, parent)
+        local function NewIconButton(parentFrame)
+            local btn = CreateFrame("Button", nil, parentFrame)
             btn:SetSize(36, 36)
 
             btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -646,16 +625,17 @@ local function BuildConfigFrame()
                 local data = selfBtn._data
                 GameTooltip:SetOwner(selfBtn, "ANCHOR_CURSOR")
 
-                local fileId
-                if C_Texture and C_Texture.GetFileIDFromPath and data.texture then
-                    fileId = C_Texture.GetFileIDFromPath(data.texture)
+                local header = tostring(data.index or 0)
+                local textureID
+                if type(data.texture) == "number" then
+                    textureID = data.texture
+                elseif C_Texture and C_Texture.GetFileIDFromPath and type(data.texture) == "string" then
+                    textureID = C_Texture.GetFileIDFromPath(data.texture)
+                end
+                if textureID then
+                    header = string.format("%d  %d", data.index or 0, textureID)
                 end
 
-                local header = string.format("%d%s%s",
-                    data.index or 0,
-                    fileId and ("  " .. tostring(fileId)) or "",
-                    ""
-                )
                 GameTooltip:SetText(header, 1, 0.82, 0, true)
                 GameTooltip:AddLine(data.name or "", 0.9, 0.9, 0.9, true)
                 GameTooltip:Show()
@@ -687,12 +667,12 @@ local function BuildConfigFrame()
             ClearIconButtons()
 
             local filter = iconPickerFrame._filter or "ALL"
-            local search = iconPickerFrame._search or ""
-            search = string.lower(search)
+            local search = string.lower(iconPickerFrame._search or "")
 
             local filtered = {}
             for _, data in ipairs(iconDB) do
-                local passFilter = (filter == "ALL")
+                local passFilter =
+                    (filter == "ALL")
                     or (filter == "ITEM"  and data.kind == "ITEM")
                     or (filter == "SPELL" and data.kind == "SPELL")
 
@@ -725,6 +705,7 @@ local function BuildConfigFrame()
                 local x = 4 + col * (cellSize + padX)
                 local y = -4 - row * (cellSize + padY)
 
+                btn:ClearAllPoints()
                 btn:SetPoint("TOPLEFT", content, "TOPLEFT", x, y)
                 btn:Show()
 
@@ -742,7 +723,6 @@ local function BuildConfigFrame()
 
         iconPickerFrame.RefreshIcons = RefreshIconGrid
 
-        -- Filter dropdown init
         local function FilterDrop_OnClick(selfBtn)
             UIDropDownMenu_SetSelectedValue(filterDrop, selfBtn.value)
             iconPickerFrame._filter = selfBtn.value or "ALL"
@@ -778,7 +758,6 @@ local function BuildConfigFrame()
             RefreshIconGrid()
         end)
 
-        -- Buttons Okay / Cancel
         local okBtn = CreateFrame("Button", nil, iconPickerFrame, "UIPanelButtonTemplate")
         okBtn:SetSize(80, 22)
         okBtn:SetPoint("BOTTOMRIGHT", iconPickerFrame, "BOTTOMRIGHT", -8, 8)
@@ -806,11 +785,10 @@ local function BuildConfigFrame()
                 iconDB = BuildIconDB()
             end
             iconPickerFrame._selectedIconData = nil
-            iconPickerFrame._search = ""
-            searchEdit:SetText("")
+            iconPickerFrame._search           = ""
             UIDropDownMenu_SetSelectedValue(filterDrop, "ALL")
             UIDropDownMenu_SetText(filterDrop, "All Icons")
-            iconPickerFrame._filter = "ALL"
+            searchEdit:SetText("")
             RefreshIconGrid()
         end)
 
@@ -827,46 +805,30 @@ local function BuildConfigFrame()
     ------------------------------------------------
 
     local triggerLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    triggerLabel:SetPoint("TOPLEFT", spellInfoText, "BOTTOMLEFT", 0, -12)
+    triggerLabel:SetPoint("TOPLEFT", iconInfoText, "BOTTOMLEFT", 0, -12)
     triggerLabel:SetText("When should Copporclang speak?")
     StyleText(triggerLabel, "LABEL")
 
     local triggerDrop = CreateFrame("Frame", "PersonaEngineTriggerDrop", actionPage, "UIDropDownMenuTemplate")
     triggerDrop:SetPoint("LEFT", triggerLabel, "RIGHT", -10, -4)
+    configFrame.triggerDrop = triggerDrop
 
-    -- "?" help
     local triggerHelp = CreateFrame("Button", nil, actionPage)
     triggerHelp:SetSize(16, 16)
     triggerHelp:SetPoint("LEFT", triggerDrop, "RIGHT", 4, 3)
 
-    local tex = triggerHelp:CreateTexture(nil, "OVERLAY")
-    tex:SetAllPoints()
-    tex:SetTexture("Interface\\FriendsFrame\\InformationIcon")
+    local trigTex = triggerHelp:CreateTexture(nil, "OVERLAY")
+    trigTex:SetAllPoints()
+    trigTex:SetTexture("Interface\\FriendsFrame\\InformationIcon")
 
     triggerHelp:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Trigger modes", 1, 1, 1, true)
-        GameTooltip:AddLine("On Button Press:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" • Eligible every time the macro runs.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" • Ignores cooldown and resource checks.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" • Still respects chance and rate limiting.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" ", 0, 0, 0, false)
-        GameTooltip:AddLine("On Cast:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" • Only if the action would actually cast now.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" • Not on cooldown, and usable (resources/range).", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" ", 0, 0, 0, false)
-        GameTooltip:AddLine("When Cooldown Starts:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" • Fires once when the action goes from ready → on cooldown.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" ", 0, 0, 0, false)
-        GameTooltip:AddLine("When Cooldown Ready:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" • Fires once when the action goes from on cooldown → ready.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" ", 0, 0, 0, false)
-        GameTooltip:AddLine("While Buff Is Active:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" • Eligible only while this spell's buff is on you or your pet.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" ", 0, 0, 0, false)
-        GameTooltip:AddLine("When GCD Is Free:", 0.9, 0.9, 0.9, true)
-        GameTooltip:AddLine(" • Eligible only while the global cooldown is currently free.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("On Button Press: every time the macro runs.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("On Cast: only when the spell/item would actually cast.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("When Cooldown Starts: once when it goes ready → on cooldown.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("When Cooldown Ready: once when it goes on cooldown → ready.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     triggerHelp:SetScript("OnLeave", function()
@@ -881,8 +843,8 @@ local function BuildConfigFrame()
         local triggerModes = PE.TRIGGER_MODES or {
             ON_PRESS = "On Button Press",
             ON_CAST  = "On Cast",
-            ON_READY = "When Cooldown Ready",
             ON_CD    = "When Cooldown Starts",
+            ON_READY = "When Cooldown Ready",
         }
         local info = UIDropDownMenu_CreateInfo()
         for key, label in pairs(triggerModes) do
@@ -896,15 +858,10 @@ local function BuildConfigFrame()
 
     UIDropDownMenu_SetWidth(triggerDrop, 190)
     UIDropDownMenu_SetSelectedValue(triggerDrop, "ON_CAST")
-    UIDropDownMenu_SetText(
-        triggerDrop,
-        (PE.TRIGGER_MODES and PE.TRIGGER_MODES["ON_CAST"]) or "On Cast"
-    )
-
-    configFrame.triggerDrop = triggerDrop
+    UIDropDownMenu_SetText(triggerDrop, (PE.TRIGGER_MODES and PE.TRIGGER_MODES["ON_CAST"]) or "On Cast")
 
     ------------------------------------------------
-    -- Chance + enabled
+    -- Chance + Enabled
     ------------------------------------------------
 
     local chanceLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -947,37 +904,32 @@ local function BuildConfigFrame()
     chanLabel:SetText("Channels:")
     StyleText(chanLabel, "LABEL")
 
-    local chans = { "SAY", "YELL", "EMOTE", "PARTY", "RAID" }
     local chanChecks = {}
-    local lastInRow
-    local row2Anchor
+    local lastRow1
 
-    for i, chan in ipairs(chans) do
+    local function AddChanCheckbox(text, anchorTo, dx, dy)
         local cb
         if UI and UI.CreateCheckbox then
-            cb = UI.CreateCheckbox(actionPage, { label = chan })
+            cb = UI.CreateCheckbox(actionPage, { label = text })
         else
             cb = CreateFrame("CheckButton", nil, actionPage, "InterfaceOptionsCheckButtonTemplate")
-            cb.Text:SetText(chan)
+            cb.Text:SetText(text)
             StyleText(cb.Text, "LABEL")
         end
-
-        if i == 1 then
-            cb:SetPoint("LEFT", chanLabel, "RIGHT", 10, 0)
-        elseif i <= 3 then
-            cb:SetPoint("LEFT", lastInRow, "RIGHT", 70, 0)
-        elseif i == 4 then
-            cb:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 10, -6)
-            row2Anchor = cb
-        else
-            cb:SetPoint("LEFT", row2Anchor, "RIGHT", 70, 0)
-        end
-
-        cb:SetChecked(chan == "SAY")
-        chanChecks[chan] = cb
-        lastInRow = cb
+        cb:SetPoint("LEFT", anchorTo, "RIGHT", dx, dy)
+        return cb
     end
 
+    chanChecks.SAY   = AddChanCheckbox("SAY",   chanLabel, 10, 0)
+    lastRow1         = chanChecks.SAY
+    chanChecks.YELL  = AddChanCheckbox("YELL",  lastRow1,  70, 0)
+    lastRow1         = chanChecks.YELL
+    chanChecks.EMOTE = AddChanCheckbox("EMOTE", lastRow1,  70, 0)
+
+    chanChecks.PARTY = AddChanCheckbox("PARTY", chanLabel, 10, -20)
+    chanChecks.RAID  = AddChanCheckbox("RAID",  chanChecks.PARTY, 70, 0)
+
+    chanChecks.SAY:SetChecked(true)
     configFrame.channelCheckboxes = chanChecks
 
     ------------------------------------------------
@@ -985,12 +937,11 @@ local function BuildConfigFrame()
     ------------------------------------------------
 
     local phraseLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -36)
+    phraseLabel:SetPoint("TOPLEFT", chanLabel, "BOTTOMLEFT", 0, -40)
     phraseLabel:SetText("Phrases (one per line):")
     StyleText(phraseLabel, "LABEL")
 
     local phraseScroll, phraseEdit
-
     if UI and UI.CreateMultilineEdit then
         local PHRASE_BOTTOM_OFFSET = 180
         phraseScroll, phraseEdit = UI.CreateMultilineEdit(actionPage, {
@@ -1007,8 +958,8 @@ local function BuildConfigFrame()
         })
     else
         phraseScroll = CreateFrame("ScrollFrame", "PersonaEnginePhraseScroll", actionPage, "UIPanelScrollFrameTemplate,BackdropTemplate")
-        phraseScroll:SetPoint("TOPLEFT",     phraseLabel, "BOTTOMLEFT", -4, -6)
-        phraseScroll:SetPoint("BOTTOMRIGHT", actionPage,  "BOTTOMRIGHT", -10, 130)
+        phraseScroll:SetPoint("TOPLEFT", phraseLabel, "BOTTOMLEFT", -4, -6)
+        phraseScroll:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -10, 130)
 
         phraseEdit = CreateFrame("EditBox", nil, phraseScroll)
         phraseEdit:SetMultiLine(true)
@@ -1029,7 +980,6 @@ local function BuildConfigFrame()
         phraseEdit:SetScript("OnTextChanged", function()
             phraseScroll:UpdateScrollChildRect()
         end)
-
         SizePhraseEdit()
     end
 
@@ -1038,7 +988,7 @@ local function BuildConfigFrame()
     configFrame.phraseScroll = phraseScroll
 
     ------------------------------------------------
-    -- Macro snippet area
+    -- Macro snippet
     ------------------------------------------------
 
     local MAX_MACRO_CHARS = 255
@@ -1088,7 +1038,6 @@ local function BuildConfigFrame()
         macroEdit:SetScript("OnEscapePressed", function(self)
             self:ClearFocus()
         end)
-
         SizeMacroEdit()
     end
 
@@ -1097,14 +1046,10 @@ local function BuildConfigFrame()
     macroLabel:SetText("Macro snippet:")
     StyleText(macroLabel, "LABEL")
 
-    StyleText(macroEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
-    configFrame.macroEdit = macroEdit
-
     local macroCountLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     macroCountLabel:SetPoint("LEFT", macroLabel, "RIGHT", 8, 0)
     macroCountLabel:SetText(string.format("0/%d", MAX_MACRO_CHARS))
     StyleText(macroCountLabel, "HINT")
-    configFrame.macroCountLabel = macroCountLabel
 
     macroEdit:HookScript("OnTextChanged", function(self)
         local text = self:GetText() or ""
@@ -1118,13 +1063,15 @@ local function BuildConfigFrame()
             self:SetText(trimmed)
             self:SetCursorPosition(len or MAX_MACRO_CHARS)
         end
-        if macroCountLabel then
-            macroCountLabel:SetFormattedText("%d/%d", len, MAX_MACRO_CHARS)
-        end
+        macroCountLabel:SetFormattedText("%d/%d", len, MAX_MACRO_CHARS)
     end)
 
+    StyleText(macroEdit, "EMPHASIS", { scale = GLOBAL_FONT_SCALE })
+    configFrame.macroEdit        = macroEdit
+    configFrame.macroCountLabel  = macroCountLabel
+
     ------------------------------------------------
-    -- Macro Studio buttons (bottom-right)
+    -- Macro Studio buttons
     ------------------------------------------------
 
     local saveMacroBtn = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
@@ -1149,62 +1096,55 @@ local function BuildConfigFrame()
     if UI and UI.CreateMacroBrowser then
         configFrame.macroBrowser = UI.CreateMacroBrowser({
             parent = configFrame,
-            title  = "PersonaEngine \226\128\147 Macro Picker",
+            title  = "PersonaEngine – Macro Picker",
             onMacroClick = function(name, body, icon, meta)
                 if macroNameEdit then macroNameEdit:SetText(name or "") end
                 if macroEdit     then macroEdit:SetText(body or "") end
+
                 configFrame.currentMacroName  = name
                 configFrame.currentMacroScope = meta and meta.scope or nil
                 configFrame.currentMacroIndex = meta and meta.index or nil
-                -- Seed icon from the macro we just picked, if user hasn't chosen one
-                if icon and icon ~= "" and not configFrame.selectedIconTexture then
+
+                if icon and icon ~= "" then
                     configFrame.selectedIconTexture = icon
-                    spellIcon:SetTexture(icon)
+                    iconTexture:SetTexture(icon)
                 end
             end,
         })
     end
 
     ------------------------------------------------
-    -- Save current config (action -> macro binding)
+    -- Save current config + macro
     ------------------------------------------------
 
     local function SaveCurrentConfig()
-        if not currentAction then
-            spellInfoText:SetText("|cffff2020Pick a valid primary action with |cffffff00Load|r first.|r")
-            return
-        end
-
-        if not PE.GetOrCreateActionConfig then
-            spellInfoText:SetText("|cffff2020Action config system not ready.|r")
-            return
-        end
-
         local macroName = macroNameEdit and macroNameEdit:GetText() or ""
+        macroName = macroName:match("^%s*(.-)%s*$") or ""
         if macroName == "" then
-            spellInfoText:SetText("|cffff2020Macro name required.|r")
+            iconInfoText:SetText("|cffff2020Macro name required.|r")
             return
         end
 
-        -- Per-action config (also used as cfg table we bind to macro)
-        local cfg = PE.GetOrCreateActionConfig(currentAction.kind, currentAction.id)
+        local cfg
+        if currentAction and PE.GetOrCreateActionConfig then
+            cfg = PE.GetOrCreateActionConfig(currentAction.kind, currentAction.id)
+        else
+            -- Macro with persona but no bound primary action: still allow phrases & channels.
+            cfg = {}
+        end
+
         if not cfg then
-            spellInfoText:SetText("|cffff2020Failed to get config for action.|r")
+            iconInfoText:SetText("|cffff2020Failed to get config for action.|r")
             return
         end
 
-        -- Trigger
         cfg.trigger = UIDropDownMenu_GetSelectedValue(configFrame.triggerDrop) or "ON_CAST"
 
-        -- Chance
         local n = configFrame.chanceEdit:GetNumber()
         if n <= 0 then n = 1 end
         cfg.chance = n
 
-        -- Enabled
-        cfg.enabled = configFrame.enabledCheck:GetChecked() and true or false
-
-        -- Channels
+        cfg.enabled  = configFrame.enabledCheck:GetChecked() and true or false
         cfg.channels = {}
         for chan, cb in pairs(configFrame.channelCheckboxes) do
             if cb:GetChecked() then
@@ -1215,7 +1155,6 @@ local function BuildConfigFrame()
             cfg.channels.SAY = true
         end
 
-        -- Phrases
         cfg.phrases = {}
         local txt = configFrame.phraseEdit:GetText() or ""
         for line in string.gmatch(txt, "[^\r\n]+") do
@@ -1228,50 +1167,43 @@ local function BuildConfigFrame()
             cfg.phrases = { "…internal monologue buffer overflow…" }
         end
 
-        -- Metadata for macro binding
-        cfg._kind = currentAction.kind
-        cfg._id   = currentAction.id
+        if currentAction then
+            cfg._kind = currentAction.kind
+            cfg._id   = currentAction.id
+        end
 
-        -- Save macro body + ensure macro exists
         local macroBody = configFrame.macroEdit and configFrame.macroEdit:GetText() or ""
         if PE.MacroStudio and macroBody ~= "" then
-            local iconTexture = configFrame.selectedIconTexture
-                               or (currentAction and currentAction.icon)
-                               or 134400
-            local index, scope = PE.MacroStudio.SaveMacro(macroName, macroBody, iconTexture)
+            local iconTex = configFrame.selectedIconTexture
+                         or (currentAction and currentAction.icon)
+                         or 134400
+            local index, scope = PE.MacroStudio.SaveMacro(macroName, macroBody, iconTex)
             if scope then configFrame.currentMacroScope  = scope end
             if index then configFrame.currentMacroIndex  = index end
         end
 
-        -- Bind this macro to this action config (macro-scoped persona DB)
         if PE.MacroStudio and PE.MacroStudio.SavePersonaConfig then
             local scope = configFrame.currentMacroScope or "character"
             PE.MacroStudio.SavePersonaConfig(scope, macroName, cfg)
         end
 
-        -- Refresh macro browser to pick up icon/name changes
         if configFrame.macroBrowser and configFrame.macroBrowser.Refresh then
             configFrame.macroBrowser:Refresh()
         end
 
-        spellInfoText:SetText((spellInfoText:GetText() or "") .. " |cff20ff20Saved.|r")
+        iconInfoText:SetText("|cff20ff20Saved.|r")
     end
 
     ------------------------------------------------
     -- Button scripts
     ------------------------------------------------
 
-    saveMacroBtn:SetScript("OnClick", function()
-        SaveCurrentConfig()
-    end)
+    saveMacroBtn:SetScript("OnClick", SaveCurrentConfig)
 
     pickupMacroBtn:SetScript("OnClick", function()
-        -- Ensure what we pick up matches the editor
         SaveCurrentConfig()
-
         local macroName = macroNameEdit and macroNameEdit:GetText() or ""
         if macroName == "" then return end
-
         if PE.MacroStudio and PE.MacroStudio.PickupMacroByName then
             PE.MacroStudio.PickupMacroByName(macroName)
         end
@@ -1285,10 +1217,6 @@ local function BuildConfigFrame()
         end
     end)
 
-    --------------------------------------------------
-    -- Save button (bottom-left) - same Save behavior
-    --------------------------------------------------
-
     local saveButton = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
     saveButton:SetSize(120, 24)
     saveButton:SetPoint("BOTTOMLEFT", actionPage, "BOTTOMLEFT", 4, 4)
@@ -1298,7 +1226,7 @@ local function BuildConfigFrame()
 end
 
 ----------------------------------------------------
--- Public toggle API
+-- Public toggle
 ----------------------------------------------------
 
 function PE.ToggleConfig()
@@ -1311,7 +1239,7 @@ function PE.ToggleConfig()
 end
 
 ----------------------------------------------------
--- ChatEdit_InsertLink hook (icon / spell link → icon box)
+-- ChatEdit_InsertLink hook for icon box
 ----------------------------------------------------
 
 do
@@ -1319,15 +1247,13 @@ do
         if not PE._OrigChatEdit_InsertLink then
             PE._OrigChatEdit_InsertLink = ChatEdit_InsertLink
         end
-        local Orig_ChatEdit_InsertLink = PE._OrigChatEdit_InsertLink
+        local Orig = PE._OrigChatEdit_InsertLink
 
         ChatEdit_InsertLink = function(text)
-            -- Let the default handler try first
-            if Orig_ChatEdit_InsertLink(text) then
+            if Orig(text) then
                 return true
             end
 
-            -- If our config is open and icon box focused, capture links
             if configFrame and configFrame:IsShown()
                and configFrame.spellEdit and configFrame.spellEdit:HasFocus()
             then
@@ -1340,10 +1266,6 @@ do
             end
 
             return false
-        end
-    else
-        if PE.Log then
-            PE.Log(2, "ChatEdit_InsertLink not available; icon link capture disabled.")
         end
     end
 end
