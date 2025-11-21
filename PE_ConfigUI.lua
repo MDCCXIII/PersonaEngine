@@ -86,72 +86,12 @@ local function GetActionByInput(input)
     return PE.ResolveActionFromInput(input)
 end
 
--- Build a DB of icon entries usable by the icon picker & suggestions.
--- FIX: make sure Blizzard's macro UI is loaded, otherwise GetNumMacroIcons()
--- just returns 0 and we get an empty grid.
-local function BuildIconDB()
-    -- Ensure Blizzard_MacroUI is loaded so icon data tables exist
-    if MacroFrame_LoadUI then
-        MacroFrame_LoadUI()
-    end
-
-    if not GetNumMacroIcons or not GetMacroIconInfo then
-        return {}
-    end
-
-    local numIcons = GetNumMacroIcons()
-    -- Some clients rely on NUM_MACRO_ICONS after Macro UI load
-    if (not numIcons or numIcons <= 0) and _G.NUM_MACRO_ICONS then
-        numIcons = _G.NUM_MACRO_ICONS
-    end
-
-    if not numIcons or numIcons <= 0 then
-        return {}
-    end
-
-    local icons = {}
-
-    for i = 1, numIcons do
-        local tex = GetMacroIconInfo(i)
-        if tex then
-            local texture = tex
-            local name
-
-            if type(tex) == "number" then
-                -- FileID only – use numeric name, suggestions based on that.
-                name = tostring(tex)
-            else
-                -- Path string – take last path component.
-                name = tex:match("([^\\]+)$") or tex
-            end
-
-            local lower = string.lower(name)
-
-            local kind = "OTHER"
-            if lower:find("^inv_") then
-                kind = "ITEM"
-            elseif lower:find("^spell_") then
-                kind = "SPELL"
-            end
-
-            table.insert(icons, {
-                index   = i,
-                texture = texture,
-                name    = name,
-                lower   = lower,
-                kind    = kind,
-            })
-        end
-    end
-
-    return icons
-end
-
 ----------------------------------------------------
 -- Config frame
 ----------------------------------------------------
 
 local configFrame
+local currentAction -- { kind, id, name, icon }
 
 local function BuildConfigFrame()
     if configFrame then return end
@@ -162,14 +102,14 @@ local function BuildConfigFrame()
 
     if UI and UI.CreateWindow then
         configFrame = UI.CreateWindow({
-            id       = "Config",
-            title    = "Persona Engine – Config",
-            width    = 700,
-            height   = 750,
-            minWidth = 520,
+            id        = "Config",
+            title     = "Persona Engine – Config",
+            width     = 700,
+            height    = 750,
+            minWidth  = 520,
             minHeight = 430,
-            strata   = "DIALOG",
-            level    = 100,
+            strata    = "DIALOG",
+            level     = 100,
         })
         if configFrame.title then
             StyleText(configFrame.title, "TITLE")
@@ -213,8 +153,8 @@ local function BuildConfigFrame()
     actionPage:SetPoint("TOPLEFT",     configFrame, "TOPLEFT",     8,  -60)
     actionPage:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -8,  8)
 
-    settingsPage:SetPoint("TOPLEFT",     actionPage, "TOPLEFT")
-    settingsPage:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT")
+    settingsPage:SetPoint("TOPLEFT",     actionPage, "TOPLEFT", 0, 0)
+    settingsPage:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", 0, 0)
     settingsPage:Hide()
 
     local tabButtons = {}
@@ -270,11 +210,11 @@ local function BuildConfigFrame()
     macroNameEdit:SetHeight(20)
     macroNameEdit:SetMaxLetters(16)
     macroNameEdit:SetPoint("LEFT",  macroNameLabel, "RIGHT", 8, 0)
-    macroNameEdit:SetPoint("RIGHT", actionPage, "RIGHT", -8, 0)
+    macroNameEdit:SetPoint("RIGHT", actionPage,      "RIGHT", -8, 0)
     configFrame.macroNameEdit = macroNameEdit
 
     ------------------------------------------------
-    -- Icon row (icon + optional primary action via Load)
+    -- Icon / primary action row
     ------------------------------------------------
 
     local iconLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -299,13 +239,13 @@ local function BuildConfigFrame()
     iconEdit:SetHeight(20)
     iconEdit:SetPoint("LEFT",  iconLabel, "RIGHT", 8, 0)
     iconEdit:SetPoint("RIGHT", iconHelp,  "LEFT", -26, 0)
-    configFrame.spellEdit = iconEdit
+    configFrame.spellEdit = iconEdit      -- used by ChatEdit_InsertLink hook
 
     local iconTexture = actionPage:CreateTexture(nil, "OVERLAY")
     iconTexture:SetSize(24, 24)
     iconTexture:SetPoint("LEFT", iconEdit, "RIGHT", 4, 0)
     iconTexture:SetTexture(134400) -- question mark
-    configFrame.iconTexture = iconTexture
+    configFrame.iconTexture        = iconTexture
     configFrame.selectedIconTexture = 134400
 
     local iconButton = CreateFrame("Button", nil, actionPage)
@@ -335,130 +275,23 @@ local function BuildConfigFrame()
     iconInfoText:SetText("|cffff2020No icon / action provided.|r")
 
     ------------------------------------------------
-    -- Icon suggestions frame
+    -- Icon suggestions (via UI.AttachIconAutocomplete)
     ------------------------------------------------
 
-    local iconDB
-    local suggestionFrame = CreateFrame("Frame", nil, actionPage, "BackdropTemplate")
-    suggestionFrame:SetPoint("TOPLEFT",  iconEdit, "BOTTOMLEFT", 0, -2)
-    suggestionFrame:SetPoint("TOPRIGHT", iconEdit, "BOTTOMRIGHT", 0, -2)
-    suggestionFrame:SetHeight(1)
-    suggestionFrame:SetBackdrop({
-        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile     = true,
-        tileSize = 16,
-        edgeSize = 12,
-        insets   = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    suggestionFrame:Hide()
-    suggestionFrame:SetFrameStrata("DIALOG")
-    suggestionFrame:SetFrameLevel(iconEdit:GetFrameLevel() + 5)
-
-    local suggestionButtons = {}
-    local activeSuggestions = {}
-
-    local function ApplyIconChoice(data)
-        if not data then return end
-        configFrame.selectedIconTexture = data.texture or 134400
-        iconTexture:SetTexture(configFrame.selectedIconTexture)
-        iconEdit:SetText(data.name or "")
-        suggestionFrame:Hide()
+    if UI and UI.AttachIconAutocomplete then
+        UI.AttachIconAutocomplete(iconEdit, {
+            parent = actionPage,
+            onIconChosen = function(data)
+                configFrame.selectedIconTexture = data.texture or 134400
+                iconTexture:SetTexture(configFrame.selectedIconTexture)
+                iconEdit:SetText(data.name or "")
+            end,
+        })
     end
-
-    local function EnsureSuggestionButton(index)
-        if suggestionButtons[index] then
-            return suggestionButtons[index]
-        end
-
-        local btn = CreateFrame("Button", nil, suggestionFrame)
-        btn:SetHeight(20)
-
-        if index == 1 then
-            btn:SetPoint("TOPLEFT",  suggestionFrame, "TOPLEFT", 4, -4)
-            btn:SetPoint("TOPRIGHT", suggestionFrame, "TOPRIGHT", -4, -4)
-        else
-            btn:SetPoint("TOPLEFT",  suggestionButtons[index - 1], "BOTTOMLEFT", 0, -2)
-            btn:SetPoint("TOPRIGHT", suggestionButtons[index - 1], "BOTTOMRIGHT", 0, -2)
-        end
-
-        btn.icon = btn:CreateTexture(nil, "ARTWORK")
-        btn.icon:SetSize(16, 16)
-        btn.icon:SetPoint("LEFT", btn, "LEFT", 2, 0)
-
-        btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        btn.label:SetPoint("LEFT", btn.icon, "RIGHT", 4, 0)
-        btn.label:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
-        btn.label:SetJustifyH("LEFT")
-
-        btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        btn:GetHighlightTexture():SetAlpha(0.4)
-
-        btn:SetScript("OnClick", function(selfBtn)
-            ApplyIconChoice(selfBtn._data)
-        end)
-
-        suggestionButtons[index] = btn
-        return btn
-    end
-
-    local function RefreshSuggestions()
-        local text = iconEdit:GetText() or ""
-        text = text:gsub("^%s+", ""):gsub("%s+$", "")
-        if text == "" then
-            suggestionFrame:Hide()
-            return
-        end
-
-        if not iconDB then
-            iconDB = BuildIconDB()
-        end
-
-        wipe(activeSuggestions)
-
-        local lower = string.lower(text)
-        local maxEntries = 8
-        for _, data in ipairs(iconDB) do
-            if data.lower:find(lower, 1, true) then
-                table.insert(activeSuggestions, data)
-                if #activeSuggestions >= maxEntries then
-                    break
-                end
-            end
-        end
-
-        if #activeSuggestions == 0 then
-            suggestionFrame:Hide()
-            return
-        end
-
-        local totalHeight = 8
-        for i, data in ipairs(activeSuggestions) do
-            local btn = EnsureSuggestionButton(i)
-            btn._data = data
-            btn.icon:SetTexture(data.texture or 134400)
-            btn.label:SetText(data.name or "?")
-            btn:Show()
-            totalHeight = totalHeight + btn:GetHeight() + 2
-        end
-
-        for j = #activeSuggestions + 1, #suggestionButtons do
-            suggestionButtons[j]:Hide()
-        end
-
-        suggestionFrame:SetHeight(totalHeight)
-        suggestionFrame:Show()
-    end
-
-    iconEdit:SetScript("OnTextChanged", function()
-        RefreshSuggestions()
-    end)
 
     ------------------------------------------------
-    -- Primary action state
+    -- Primary action state + load button
     ------------------------------------------------
-
-    local currentAction -- { kind, id, name, icon }
 
     local function LoadActionByInput()
         local txt = iconEdit:GetText()
@@ -489,337 +322,38 @@ local function BuildConfigFrame()
             summary = string.format(
                 "Spell/Item: |cffffff00%s|r (ID %s)",
                 tostring(action.name or "?"),
-                tostring(action.id or "?")
+                tostring(action.id   or "?")
             )
         end
         iconInfoText:SetText(summary)
-
-        local cfg = PE.GetOrCreateActionConfig(action.kind, action.id)
-
-        local triggerModes = PE.TRIGGER_MODES or {
-            ON_PRESS = "On Button Press",
-            ON_CAST  = "On Cast",
-            ON_CD    = "When Cooldown Starts",
-            ON_READY = "When Cooldown Ready",
-        }
-
-        UIDropDownMenu_SetSelectedValue(configFrame.triggerDrop, cfg.trigger)
-        UIDropDownMenu_SetText(configFrame.triggerDrop, triggerModes[cfg.trigger] or triggerModes.ON_CAST or "On Cast")
-
-        configFrame.chanceEdit:SetNumber(cfg.chance or 5)
-
-        local chanCfg = cfg.channels or {}
-        configFrame.channelCheckboxes.SAY  :SetChecked(chanCfg.SAY)
-        configFrame.channelCheckboxes.YELL :SetChecked(chanCfg.YELL)
-        configFrame.channelCheckboxes.EMOTE:SetChecked(chanCfg.EMOTE)
-        configFrame.channelCheckboxes.PARTY:SetChecked(chanCfg.PARTY)
-        configFrame.channelCheckboxes.RAID :SetChecked(chanCfg.RAID)
-
-        configFrame.enabledCheck:SetChecked(cfg.enabled ~= false)
-
-        local buf = ""
-        if cfg.phrases then
-            for i, line in ipairs(cfg.phrases) do
-                buf = buf .. line
-                if i < #cfg.phrases then buf = buf .. "\n" end
-            end
-        end
-        configFrame.phraseEdit:SetText(buf)
-
-        if configFrame.macroEdit and PE.MacroStudio and PE.MacroStudio.BuildDefaultMacroForAction then
-            local macroText = PE.MacroStudio.BuildDefaultMacroForAction(
-                action,
-                configFrame.macroNameEdit and configFrame.macroNameEdit:GetText() or nil
-            )
-            if macroText and macroText ~= "" then
-                configFrame.macroEdit:SetText(macroText)
-            end
-        end
     end
 
     loadButton:SetScript("OnClick", LoadActionByInput)
 
     ------------------------------------------------
-    -- Icon picker popup
+    -- Icon picker popup (via UI.CreateIconPicker)
     ------------------------------------------------
 
     local iconPickerFrame
 
-    local function EnsureIconPicker()
-        if iconPickerFrame then
-            return iconPickerFrame
-        end
-
-        local parent = configFrame or UIParent
-
-        if UI and UI.CreateWindow then
-            iconPickerFrame = UI.CreateWindow({
-                id    = "IconPicker",
-                title = "Choose an Icon:",
-                width = 520,
-                height = 480,
-                strata = "DIALOG",
-                level  = 130,
-            })
-        else
-            iconPickerFrame = CreateFrame("Frame", "PersonaEngine_IconPickerFrame", parent, "BasicFrameTemplateWithInset")
-            iconPickerFrame:SetSize(520, 480)
-            iconPickerFrame:SetPoint("CENTER", UIParent, "CENTER", 40, 40)
-            iconPickerFrame:SetFrameStrata("DIALOG")
-            iconPickerFrame:SetFrameLevel(130)
-            iconPickerFrame:SetMovable(true)
-            iconPickerFrame:EnableMouse(true)
-            iconPickerFrame:RegisterForDrag("LeftButton")
-            iconPickerFrame:SetScript("OnDragStart", iconPickerFrame.StartMoving)
-            iconPickerFrame:SetScript("OnDragStop",  iconPickerFrame.StopMovingOrSizing)
-
-            local titleFS = iconPickerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            if iconPickerFrame.TitleBg then
-                titleFS:SetPoint("LEFT", iconPickerFrame.TitleBg, "LEFT", 5, 0)
-            else
-                titleFS:SetPoint("TOPLEFT", 10, -5)
-            end
-            titleFS:SetText("Choose an Icon:")
-            StyleText(titleFS, "TITLE")
-            iconPickerFrame.title = titleFS
-
-            local closeBtn = CreateFrame("Button", nil, iconPickerFrame, "UIPanelCloseButton")
-            closeBtn:SetPoint("TOPRIGHT", iconPickerFrame, "TOPRIGHT", -5, -5)
-        end
-
-        iconPickerFrame:Hide()
-
-        -- Filter / search
-        local filterLabel = iconPickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        filterLabel:SetPoint("TOPLEFT", iconPickerFrame, "TOPLEFT", 12, -32)
-        filterLabel:SetText("Filter:")
-        StyleText(filterLabel, "LABEL")
-
-        local filterDrop = CreateFrame("Frame", "PersonaEngine_IconFilterDrop", iconPickerFrame, "UIDropDownMenuTemplate")
-        filterDrop:SetPoint("LEFT", filterLabel, "RIGHT", -10, -4)
-
-        local searchLabel = iconPickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        searchLabel:SetPoint("TOPRIGHT", iconPickerFrame, "TOPRIGHT", -210, -32)
-        searchLabel:SetText("Search:")
-        StyleText(searchLabel, "LABEL")
-
-        local searchEdit = CreateFrame("EditBox", nil, iconPickerFrame, "InputBoxTemplate")
-        searchEdit:SetAutoFocus(false)
-        searchEdit:SetHeight(20)
-        searchEdit:SetPoint("LEFT", searchLabel, "RIGHT", 6, 0)
-        searchEdit:SetPoint("RIGHT", iconPickerFrame, "RIGHT", -16, 0)
-
-        -- Scroll area
-        local scroll = CreateFrame("ScrollFrame", "PersonaEngine_IconPickerScroll", iconPickerFrame, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT",     iconPickerFrame, "TOPLEFT",  12, -60)
-        scroll:SetPoint("BOTTOMRIGHT", iconPickerFrame, "BOTTOMRIGHT", -30, 50)
-
-        local content = CreateFrame("Frame", nil, scroll)
-        content:SetSize(1, 1)
-        scroll:SetScrollChild(content)
-
-        iconPickerFrame._buttons = {}
-        iconPickerFrame._filter  = "ALL"
-        iconPickerFrame._search  = ""
-        iconPickerFrame._selectedIconData = nil
-
-        local function NewIconButton(parentFrame)
-            local btn = CreateFrame("Button", nil, parentFrame)
-            btn:SetSize(36, 36)
-
-            btn.icon = btn:CreateTexture(nil, "ARTWORK")
-            btn.icon:SetAllPoints()
-
-            btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-
-            btn:SetScript("OnEnter", function(selfBtn)
-                if not GameTooltip or not selfBtn._data then return end
-                local data = selfBtn._data
-                GameTooltip:SetOwner(selfBtn, "ANCHOR_CURSOR")
-
-                local header = tostring(data.index or 0)
-                local textureID
-                if type(data.texture) == "number" then
-                    textureID = data.texture
-                elseif C_Texture and C_Texture.GetFileIDFromPath and type(data.texture) == "string" then
-                    textureID = C_Texture.GetFileIDFromPath(data.texture)
-                end
-                if textureID then
-                    header = string.format("%d  %d", data.index or 0, textureID)
-                end
-
-                GameTooltip:SetText(header, 1, 0.82, 0, true)
-                GameTooltip:AddLine(data.name or "", 0.9, 0.9, 0.9, true)
-                GameTooltip:Show()
-            end)
-
-            btn:SetScript("OnLeave", function()
-                if GameTooltip then GameTooltip:Hide() end
-            end)
-
-            btn:SetScript("OnClick", function(selfBtn)
-                iconPickerFrame._selectedIconData = selfBtn._data
-            end)
-
-            return btn
-        end
-
-        local function ClearIconButtons()
-            for _, b in ipairs(iconPickerFrame._buttons) do
-                b:Hide()
-                b._data = nil
-            end
-        end
-
-        local function RefreshIconGrid()
-            if not iconDB then
-                iconDB = BuildIconDB()
-            end
-
-            ClearIconButtons()
-
-            local filter = iconPickerFrame._filter or "ALL"
-            local search = string.lower(iconPickerFrame._search or "")
-
-            local filtered = {}
-            for _, data in ipairs(iconDB) do
-                local passFilter =
-                    (filter == "ALL")
-                    or (filter == "ITEM"  and data.kind == "ITEM")
-                    or (filter == "SPELL" and data.kind == "SPELL")
-
-                if passFilter then
-                    if search == "" or data.lower:find(search, 1, true) then
-                        table.insert(filtered, data)
-                    end
-                end
-            end
-
-            local cols      = 10
-            local padX      = 4
-            local padY      = 4
-            local cellSize  = 36
-            local lastRowY  = 0
-
-            for i, data in ipairs(filtered) do
-                local btn = iconPickerFrame._buttons[i]
-                if not btn then
-                    btn = NewIconButton(content)
-                    iconPickerFrame._buttons[i] = btn
-                end
-
-                btn._data = data
-                btn.icon:SetTexture(data.texture or 134400)
-
-                local col = (i - 1) % cols
-                local row = math.floor((i - 1) / cols)
-
-                local x = 4 + col * (cellSize + padX)
-                local y = -4 - row * (cellSize + padY)
-
-                btn:ClearAllPoints()
-                btn:SetPoint("TOPLEFT", content, "TOPLEFT", x, y)
-                btn:Show()
-
-                lastRowY = y
-            end
-
-            for j = #filtered + 1, #iconPickerFrame._buttons do
-                iconPickerFrame._buttons[j]:Hide()
-                iconPickerFrame._buttons[j]._data = nil
-            end
-
-            local height = math.abs(lastRowY) + cellSize + padY
-            content:SetHeight(math.max(height, 1))
-        end
-
-        iconPickerFrame.RefreshIcons = RefreshIconGrid
-
-        local function FilterDrop_OnClick(selfBtn)
-            UIDropDownMenu_SetSelectedValue(filterDrop, selfBtn.value)
-            iconPickerFrame._filter = selfBtn.value or "ALL"
-            RefreshIconGrid()
-        end
-
-        UIDropDownMenu_Initialize(filterDrop, function(selfDD, level)
-            local info = UIDropDownMenu_CreateInfo()
-
-            info.text   = "All Icons"
-            info.value  = "ALL"
-            info.func   = FilterDrop_OnClick
-            info.checked = (UIDropDownMenu_GetSelectedValue(selfDD) == "ALL")
-            UIDropDownMenu_AddButton(info, level)
-
-            info.text   = "Items"
-            info.value  = "ITEM"
-            info.checked = (UIDropDownMenu_GetSelectedValue(selfDD) == "ITEM")
-            UIDropDownMenu_AddButton(info, level)
-
-            info.text   = "Spells"
-            info.value  = "SPELL"
-            info.checked = (UIDropDownMenu_GetSelectedValue(selfDD) == "SPELL")
-            UIDropDownMenu_AddButton(info, level)
-        end)
-
-        UIDropDownMenu_SetWidth(filterDrop, 120)
-        UIDropDownMenu_SetSelectedValue(filterDrop, "ALL")
-        UIDropDownMenu_SetText(filterDrop, "All Icons")
-
-        searchEdit:SetScript("OnTextChanged", function(selfEdit)
-            iconPickerFrame._search = selfEdit:GetText() or ""
-            RefreshIconGrid()
-        end)
-
-        local okBtn = CreateFrame("Button", nil, iconPickerFrame, "UIPanelButtonTemplate")
-        okBtn:SetSize(80, 22)
-        okBtn:SetPoint("BOTTOMRIGHT", iconPickerFrame, "BOTTOMRIGHT", -8, 8)
-        okBtn:SetText("Okay")
-
-        local cancelBtn = CreateFrame("Button", nil, iconPickerFrame, "UIPanelButtonTemplate")
-        cancelBtn:SetSize(80, 22)
-        cancelBtn:SetPoint("RIGHT", okBtn, "LEFT", -6, 0)
-        cancelBtn:SetText("Cancel")
-
-        okBtn:SetScript("OnClick", function()
-            local data = iconPickerFrame._selectedIconData
-            if data then
-                ApplyIconChoice(data)
-            end
-            iconPickerFrame:Hide()
-        end)
-
-        cancelBtn:SetScript("OnClick", function()
-            iconPickerFrame:Hide()
-        end)
-
-        iconPickerFrame:SetScript("OnShow", function()
-            if not iconDB then
-                iconDB = BuildIconDB()
-            end
-            iconPickerFrame._selectedIconData = nil
-            iconPickerFrame._search           = ""
-            UIDropDownMenu_SetSelectedValue(filterDrop, "ALL")
-            UIDropDownMenu_SetText(filterDrop, "All Icons")
-            searchEdit:SetText("")
-            RefreshIconGrid()
-        end)
-
-        return iconPickerFrame
-    end
-
     iconButton:SetScript("OnClick", function()
-        local picker = EnsureIconPicker()
-        picker:Show()
+        if not UI or not UI.CreateIconPicker then
+            return
+        end
+        if not iconPickerFrame then
+            iconPickerFrame = UI.CreateIconPicker({
+                parent = configFrame,
+                id     = "IconPicker",
+                title  = "Choose an Icon:",
+                onIconChosen = function(data)
+                    configFrame.selectedIconTexture = data.texture or 134400
+                    iconTexture:SetTexture(configFrame.selectedIconTexture)
+                    iconEdit:SetText(data.name or "")
+                end,
+            })
+        end
+        iconPickerFrame:Show()
     end)
-
-    ------------------------------------------------
-    -- Trigger dropdown
-    ------------------------------------------------
-
-    -- (the rest of the file is unchanged from the last version:
-    --   trigger dropdown, chance, channels, phrase box, macro snippet,
-    --   SaveCurrentConfig, Macro Browser, etc.)
-    --   ↓↓↓
 end
 
 ----------------------------------------------------

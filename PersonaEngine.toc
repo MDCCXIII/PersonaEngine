@@ -26,6 +26,7 @@ UI\PE_UICheckbox.lua
 UI\PE_UIButton.lua
 UI\PE_UIMultilineEdit.lua
 UI\PE_UIMacroBrowser.lua
+UI\PE_UIIcons.lua
 
 # UI
 PE_ConfigUI.lua
