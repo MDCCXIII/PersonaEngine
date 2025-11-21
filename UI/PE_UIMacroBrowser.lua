@@ -17,14 +17,15 @@ if PE.LogLoad then
     PE.LogLoad(MODULE)
 end
 
+
 ----------------------------------------------------
 -- Macro Browser widget
 ----------------------------------------------------
 -- UI.CreateMacroBrowser(opts) -> frame
--- opts.parent       : parent frame (default UIParent)
--- opts.onMacroClick : function(name, body, icon, meta) called on left-click
---                     meta = { index = <index>, scope = "global"/"character" }
--- opts.title        : window title (optional)
+--   opts.parent      : parent frame (default UIParent)
+--   opts.onMacroClick: function(name, body, icon, meta) called on left-click
+--       meta = { index = <macroIndex>, scope = "global"/"character" }
+--   opts.title       : window title (optional)
 
 function UI.CreateMacroBrowser(opts)
     opts = opts or {}
@@ -63,13 +64,12 @@ function UI.CreateMacroBrowser(opts)
     ------------------------------------------------
     -- Scope tabs + usage text
     ------------------------------------------------
-    f.currentScope = "global"
 
+    f.currentScope = "global"
     local tabButtons = {}
 
     local function SetScope(scope)
         f.currentScope = scope
-
         for key, btn in pairs(tabButtons) do
             if key == scope then
                 btn:LockHighlight()
@@ -77,7 +77,6 @@ function UI.CreateMacroBrowser(opts)
                 btn:UnlockHighlight()
             end
         end
-
         if f.Refresh then
             f:Refresh()
         end
@@ -95,6 +94,7 @@ function UI.CreateMacroBrowser(opts)
     local tabChar = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     tabChar:SetSize(120, 20)
     tabChar:SetPoint("LEFT", tabGeneral, "RIGHT", 6, 0)
+
     local charName = UnitName("player") or "Character"
     tabChar:SetText(charName)
     tabChar:SetScript("OnClick", function()
@@ -111,9 +111,10 @@ function UI.CreateMacroBrowser(opts)
     ------------------------------------------------
     -- Scrollable icon grid
     ------------------------------------------------
+
     local scroll = CreateFrame("ScrollFrame", "PersonaEngine_MacroBrowserScroll", f, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT",  f, "TOPLEFT", 10, -54)
-    scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 30)
+    scroll:SetPoint("TOPLEFT",     f, "TOPLEFT",     10, -54)
+    scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30,  30)
 
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(1, 1)
@@ -124,17 +125,17 @@ function UI.CreateMacroBrowser(opts)
     local function ClearButtons()
         for _, b in ipairs(f._buttons) do
             b:Hide()
-            b:SetScript("OnEnter", nil)
-            b:SetScript("OnLeave", nil)
-            b:SetScript("OnClick", nil)
+            b:SetScript("OnEnter",     nil)
+            b:SetScript("OnLeave",     nil)
+            b:SetScript("OnClick",     nil)
             b:SetScript("OnDragStart", nil)
-            b:SetScript("OnDragStop", nil)
+            b:SetScript("OnDragStop",  nil)
         end
         wipe(f._buttons)
     end
 
-    local function NewButton(parent)
-        local btn = CreateFrame("Button", nil, parent)
+    local function NewButton(parentFrame)
+        local btn = CreateFrame("Button", nil, parentFrame)
         btn:SetSize(40, 40)
 
         btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -151,6 +152,7 @@ function UI.CreateMacroBrowser(opts)
     ------------------------------------------------
     -- Refresh: rebuild grid based on current scope
     ------------------------------------------------
+
     function f:Refresh()
         ClearButtons()
 
@@ -160,18 +162,18 @@ function UI.CreateMacroBrowser(opts)
         local startIndex, endIndex, isCharScope, used, maxSlots
 
         if scope == "character" then
-            startIndex = numGlobal + 1
-            endIndex   = numGlobal + numChar
+            startIndex  = numGlobal + 1
+            endIndex    = numGlobal + numChar
             isCharScope = true
-            used      = numChar
-            maxSlots  = maxChar
+            used        = numChar
+            maxSlots    = maxChar
         else
-            startIndex = 1
-            endIndex   = numGlobal
+            startIndex  = 1
+            endIndex    = numGlobal
             isCharScope = false
-            used      = numGlobal
-            maxSlots  = maxGlobal
-            scope     = "global"
+            used        = numGlobal
+            maxSlots    = maxGlobal
+            scope       = "global"
         end
 
         if self.usageText then
@@ -179,14 +181,13 @@ function UI.CreateMacroBrowser(opts)
             self.usageText:SetFormattedText("%s: %d/%d", label, used or 0, maxSlots or 0)
         end
 
-        local cols      = 2
-        local padX      = 8
-        local padY      = 6
-        local colWidth  = 240
-        local rowHeight = 44
-
-        local row = 0
-        local col = 0
+        local cols        = 2
+        local padX        = 8
+        local padY        = 6
+        local colWidth    = 240
+        local rowHeight   = 44
+        local row         = 0
+        local col         = 0
         local lastRowBottom = 0
 
         for index = startIndex, endIndex do
@@ -274,6 +275,7 @@ function UI.CreateMacroBrowser(opts)
 
     return f
 end
+
 
 ----------------------------------------------------
 -- Module registration

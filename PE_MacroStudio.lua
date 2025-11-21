@@ -22,6 +22,7 @@ local MAX_MACRO_CHARS       = 255
 local MAX_MACRO_NAME_CHARS  = 16
 local DEFAULT_ICON_ID       = 134400 -- question mark
 
+
 ----------------------------------------------------
 -- UTF-8 helpers (name/body safety)
 ----------------------------------------------------
@@ -48,13 +49,14 @@ local function utf8safe_sub(s, maxChars)
     return s
 end
 
+
 ----------------------------------------------------
 -- Macro DB root (persona config keyed by macro)
 ----------------------------------------------------
 
 local function EnsureMacroDB()
-    PersonaEngineDB = PersonaEngineDB or {}
-    PersonaEngineDB.macros = PersonaEngineDB.macros or {}
+    PersonaEngineDB          = PersonaEngineDB or {}
+    PersonaEngineDB.macros   = PersonaEngineDB.macros or {}
 
     local root = PersonaEngineDB.macros
     root.global    = root.global    or {}
@@ -69,6 +71,7 @@ local function NormalizeScope(scope)
     end
     return "character"
 end
+
 
 ----------------------------------------------------
 -- Scope helpers
@@ -91,8 +94,8 @@ local function ResolveMacroRef(ref)
     if not ref then return end
 
     local index, name
-
     local t = type(ref)
+
     if t == "number" then
         index = ref
         name  = select(1, GetMacroInfo(index))
@@ -113,12 +116,13 @@ end
 
 MS.ResolveMacroRef = ResolveMacroRef
 
+
 ----------------------------------------------------
 -- Default macro builder for an action
 ----------------------------------------------------
-
--- Builds a macro body that calls PE.Say("<macroName>") and
+-- Builds a macro body that calls PE.Say("macroName") and
 -- performs the underlying action (spell/item/emote).
+
 function MS.BuildDefaultMacroForAction(action, macroName)
     if not action then
         return ""
@@ -157,11 +161,12 @@ function MS.BuildDefaultMacroForAction(action, macroName)
     return sayLine .. "\n"
 end
 
+
 ----------------------------------------------------
 -- Save / update macro (returns index + scope)
 ----------------------------------------------------
+-- Returns: index, scope ("global"/"character"), slotIndexWithinScope
 
--- Returns: index, scope("global"/"character"), slotIndexWithinScope
 function MS.SaveMacro(macroName, macroBody, iconTexture)
     macroName  = (macroName and macroName:match("^%s*(.-)%s*$")) or ""
     macroName  = utf8safe_sub(macroName, MAX_MACRO_NAME_CHARS)
@@ -192,7 +197,6 @@ function MS.SaveMacro(macroName, macroBody, iconTexture)
 
     -- New macro: prefer character, fall back to global if needed
     local useCharacter = true
-
     if numChar >= maxChar and numGlobal < maxGlobal then
         useCharacter = false
     elseif numChar >= maxChar and numGlobal >= maxGlobal then
@@ -203,10 +207,9 @@ function MS.SaveMacro(macroName, macroBody, iconTexture)
     end
 
     CreateMacro(macroName, icon, macroBody, useCharacter)
-
     index = GetMacroIndexByName(macroName)
-    local scope, slotIndex = GetScopeFromIndex(index)
 
+    local scope, slotIndex = GetScopeFromIndex(index)
     if PE.Log then
         PE.Log(
             3,
@@ -219,12 +222,13 @@ function MS.SaveMacro(macroName, macroBody, iconTexture)
     return index, scope, slotIndex
 end
 
+
 ----------------------------------------------------
 -- Persona config binding per macro
 ----------------------------------------------------
-
 -- Persist a reference from (scope, macroName) -> per-action cfg table.
 -- cfg is typically the same table returned by PE.GetOrCreateActionConfig.
+
 function MS.SavePersonaConfig(scope, macroName, cfg)
     if not cfg or not macroName or macroName == "" then
         return
@@ -232,6 +236,7 @@ function MS.SavePersonaConfig(scope, macroName, cfg)
 
     scope = NormalizeScope(scope)
     local root = EnsureMacroDB()
+
     root[scope][macroName] = cfg
 
     if PE.Log then
@@ -240,7 +245,8 @@ function MS.SavePersonaConfig(scope, macroName, cfg)
 end
 
 -- Resolve what PE.Say should actually speak for a given macro.
--- Returns: kind, id, cfg  (or nil if not configured)
+-- Returns: kind, id, cfg (or nil if not configured)
+
 function MS.GetSpeakPayload(ref)
     local index, scope, name = ResolveMacroRef(ref)
     if not index or not scope or not name then
@@ -248,20 +254,20 @@ function MS.GetSpeakPayload(ref)
     end
 
     local root = EnsureMacroDB()
-    local cfg = root[scope] and root[scope][name]
+    local cfg  = root[scope] and root[scope][name]
     if not cfg then
         return
     end
 
     local kind = cfg._kind or cfg.actionKind
     local id   = cfg._id   or cfg.actionId
-
     if not kind or not id then
         return
     end
 
     return kind, id, cfg
 end
+
 
 ----------------------------------------------------
 -- Pickup a macro by name (for drag to bars)
@@ -283,6 +289,7 @@ function MS.PickupMacroByName(macroName)
 
     PickupMacro(index)
 end
+
 
 ----------------------------------------------------
 -- Module registration
