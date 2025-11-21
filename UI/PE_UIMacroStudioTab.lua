@@ -300,23 +300,29 @@ function UI.BuildMacroStudioTab(configFrame, page)
     local channelChecks = {}
 
     local function MakeChannelCheck(prev, text, token, xOffset)
-        local cb = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
-        if prev then
-            cb:SetPoint("LEFT", prev, "RIGHT", xOffset or 18, 0)
-        else
-            cb:SetPoint("LEFT", channelsLabel, "RIGHT", 6, 0)
-        end
-        cb.text:SetText(text)
-        StyleText(cb.text, "LABEL")
-        channelChecks[token] = cb
-        return cb
-    end
+		local cb = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
 
-    local cbSAY   = MakeChannelCheck(nil,    "SAY",   "SAY")
-    local cbYELL  = MakeChannelCheck(cbSAY,  "YELL",  "YELL")
-    local cbEMOTE = MakeChannelCheck(cbYELL, "EMOTE", "EMOTE")
-    local cbPARTY = MakeChannelCheck(cbEMOTE,"PARTY", "PARTY", 26)
-    local cbRAID  = MakeChannelCheck(cbPARTY,"RAID",  "RAID",  18)
+		if prev then
+			local anchor = prev.text or prev
+			cb:SetPoint("LEFT", anchor, "RIGHT", xOffset or 12, 0)
+		else
+			cb:SetPoint("LEFT", channelsLabel, "RIGHT", 8, 0)
+		end
+
+		cb.text:SetText(text)
+		StyleText(cb.text, "LABEL")
+
+		channelChecks[token] = cb
+		return cb
+	end
+
+
+    local cbSAY   = MakeChannelCheck(nil,     "SAY",   "SAY")
+	local cbYELL  = MakeChannelCheck(cbSAY,   "YELL",  "YELL")
+	local cbEMOTE = MakeChannelCheck(cbYELL,  "EMOTE", "EMOTE")
+	local cbPARTY = MakeChannelCheck(cbEMOTE, "PARTY", "PARTY")
+	local cbRAID  = MakeChannelCheck(cbPARTY, "RAID",  "RAID")
+
 
     cbSAY:SetChecked(true)
 
