@@ -1,6 +1,6 @@
 -- ##################################################
 -- UI/PE_UIIcons.lua
--- Icon DB + autocomplete + picker widgets
+-- Shared icon DB, autocomplete, and picker
 -- ##################################################
 
 local MODULE = "UIIcons"
@@ -18,7 +18,7 @@ if PE.LogLoad then
 end
 
 ----------------------------------------------------
--- Icon DB (shared cache)
+-- Icon DB
 ----------------------------------------------------
 
 local ICON_DB
@@ -28,7 +28,7 @@ local function BuildIconDB()
         return ICON_DB
     end
 
-    -- Ensure Blizzard_MacroUI is loaded so icon data tables exist
+    -- Load Blizzard macro UI so icon tables exist
     if MacroFrame_LoadUI then
         MacroFrame_LoadUI()
     end
@@ -39,8 +39,6 @@ local function BuildIconDB()
     end
 
     local numIcons = GetNumMacroIcons()
-
-    -- Some clients rely on NUM_MACRO_ICONS after Macro UI load
     if (not numIcons or numIcons <= 0) and _G.NUM_MACRO_ICONS then
         numIcons = _G.NUM_MACRO_ICONS
     end
@@ -59,10 +57,8 @@ local function BuildIconDB()
             local name
 
             if type(tex) == "number" then
-                -- FileID only – use numeric name, suggestions based on that.
                 name = tostring(tex)
             else
-                -- Path string – take last path component.
                 name = tex:match("([^\\]+)$") or tex
             end
 
@@ -95,11 +91,10 @@ UI.BuildIconDB = BuildIconDB
 -- Autocomplete dropdown under an edit box
 ----------------------------------------------------
 
--- UI.AttachIconAutocomplete(editBox, opts) -> suggestionFrame
--- opts:
---   parent       : frame (default = editBox:GetParent())
---   maxEntries   : number (default 8)
---   onIconChosen : function(data)  -- data from BuildIconDB()
+-- UI.AttachIconAutocomplete(editBox, opts)
+-- opts.parent       : frame (default editBox:GetParent())
+-- opts.maxEntries   : number (default 8)
+-- opts.onIconChosen : function(data)
 function UI.AttachIconAutocomplete(editBox, opts)
     if not editBox then return nil end
 
@@ -215,7 +210,6 @@ function UI.AttachIconAutocomplete(editBox, opts)
         suggestionFrame:Show()
     end
 
-    -- Use HookScript so callers can still set their own OnTextChanged if they want.
     editBox:HookScript("OnTextChanged", function()
         RefreshSuggestions()
     end)
@@ -229,11 +223,10 @@ end
 ----------------------------------------------------
 
 -- UI.CreateIconPicker(opts) -> frame
--- opts:
---   parent       : frame (default UIParent)
---   id           : string (window id for UI.CreateWindow)
---   title        : string
---   onIconChosen : function(data)
+-- opts.parent       : frame
+-- opts.id           : string
+-- opts.title        : string
+-- opts.onIconChosen : function(data)
 function UI.CreateIconPicker(opts)
     opts = opts or {}
 
@@ -243,7 +236,6 @@ function UI.CreateIconPicker(opts)
     local onIconChosen = opts.onIconChosen
 
     local f
-
     if UI.CreateWindow then
         f = UI.CreateWindow({
             id     = windowId,
@@ -280,12 +272,11 @@ function UI.CreateIconPicker(opts)
 
     f:Hide()
 
-    -- Filter / search
     local filterLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     filterLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -32)
     filterLabel:SetText("Filter:")
 
-    local filterDrop = CreateFrame("Frame", "PersonaEngine_IconFilterDrop", f, "UIDropDownMenuTemplate")
+    local filterDrop = CreateFrame("Frame", nil, f, "UIDropDownMenuTemplate")
     filterDrop:SetPoint("LEFT", filterLabel, "RIGHT", -10, -4)
 
     local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -298,8 +289,7 @@ function UI.CreateIconPicker(opts)
     searchEdit:SetPoint("LEFT",  searchLabel, "RIGHT", 6, 0)
     searchEdit:SetPoint("RIGHT", f,          "RIGHT", -16, 0)
 
-    -- Scroll area
-    local scroll = CreateFrame("ScrollFrame", "PersonaEngine_IconPickerScroll", f, "UIPanelScrollFrameTemplate")
+    local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT",     f, "TOPLEFT",     12, -60)
     scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 50)
 
@@ -456,6 +446,13 @@ function UI.CreateIconPicker(opts)
         RefreshIconGrid()
     end)
 
+    local function ApplyIconChoice(data)
+        if not data then return end
+        if onIconChosen then
+            onIconChosen(data)
+        end
+    end
+
     local okBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     okBtn:SetSize(80, 22)
     okBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
@@ -468,8 +465,8 @@ function UI.CreateIconPicker(opts)
 
     okBtn:SetScript("OnClick", function()
         local data = f._selectedIconData
-        if data and onIconChosen then
-            onIconChosen(data)
+        if data then
+            ApplyIconChoice(data)
         end
         f:Hide()
     end)
@@ -479,10 +476,9 @@ function UI.CreateIconPicker(opts)
     end)
 
     f:SetScript("OnShow", function()
-        BuildIconDB() -- ensure DB exists
+        BuildIconDB()
         f._selectedIconData = nil
         f._search           = ""
-
         UIDropDownMenu_SetSelectedValue(filterDrop, "ALL")
         UIDropDownMenu_SetText(filterDrop, "All Icons")
         searchEdit:SetText("")
