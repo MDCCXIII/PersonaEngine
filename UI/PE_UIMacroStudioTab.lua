@@ -347,29 +347,30 @@ function UI.BuildMacroStudioTab(configFrame, page)
         phrasesBox:SetScrollChild(phrasesEdit)
     end
 
-    ------------------------------------------------
+       ------------------------------------------------
     -- Macro snippet + counter
     ------------------------------------------------
-	-- create the label
+    -- Label sits under the phrases box, above the snippet editor
     local macroLabel = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    macroLabel:SetPoint("LEFT", page, "LEFT", 8, 0)
-    macroLabel:SetPoint("BOTTOM", page, "BOTTOM", 0, 38)
+    macroLabel:SetPoint("TOPLEFT", phrasesBox, "BOTTOMLEFT", 0, -12)
     macroLabel:SetJustifyH("LEFT")
     StyleText(macroLabel, "LABEL")
-    macroLabel:SetText("Macro snippet: 0/255")
+    macroLabel:SetText("Macro snippet:")
 
     local macroBox, macroEdit
     if UI.CreateMultilineEdit then
         macroBox, macroEdit = UI.CreateMultilineEdit(page, {
-            point  = { "TOPLEFT", macroLabel, "BOTTOMLEFT", 0, -4 },
+            point  = { "TOPLEFT",  macroLabel, "BOTTOMLEFT", 0, -4 },
+            -- leave 40px above the bottom for the buttons
             point2 = { "BOTTOMRIGHT", page, "BOTTOMRIGHT", -8, 40 },
             textScale = 1.0,
             minHeight = 40,
         })
     else
         macroBox = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
-        macroBox:SetPoint("BOTTOMLEFT", macroLabel, "BOTTOMLEFT", 0, -4)
+        macroBox:SetPoint("TOPLEFT",  macroLabel, "BOTTOMLEFT", 0, -4)
         macroBox:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -8, 40)
+
         macroEdit = CreateFrame("EditBox", nil, macroBox)
         macroEdit:SetMultiLine(true)
         macroEdit:SetAutoFocus(false)
@@ -377,9 +378,16 @@ function UI.BuildMacroStudioTab(configFrame, page)
         macroBox:SetScrollChild(macroEdit)
     end
 
+    -- Counter lives inside the box, bottom-right
+    local macroCounter = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    macroCounter:SetPoint("BOTTOMRIGHT", macroBox, "BOTTOMRIGHT", -6, 4)
+    macroCounter:SetJustifyH("RIGHT")
+    StyleText(macroCounter, "HINT")
+
     local function UpdateMacroCounter()
         local txt = macroEdit:GetText() or ""
         local n   = utf8len(txt)
+
         if n > 255 then
             local bytes = #txt
             while bytes > 0 and utf8len(txt) > 255 do
@@ -390,10 +398,13 @@ function UI.BuildMacroStudioTab(configFrame, page)
             macroEdit:SetCursorPosition(utf8len(txt))
             n = utf8len(txt)
         end
-        macroLabel:SetFormattedText("Macro Commands: %d/255", n)
+
+        macroCounter:SetFormattedText("%d/255", n)
     end
+
     macroEdit:SetScript("OnTextChanged", UpdateMacroCounter)
     UpdateMacroCounter()
+
 
     configFrame.chanceEdit    = chanceEdit
     configFrame.enabledCheck  = enabledCheck
