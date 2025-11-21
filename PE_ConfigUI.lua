@@ -366,43 +366,14 @@ local function BuildConfigFrame()
         end
         configFrame.phraseEdit:SetText(buf)
 
-        -- Macro snippet, using PE.Say
-        if configFrame.macroEdit then
-            local macroText
+		-- Macro snippet, using PE.Say (delegated to MacroStudio)
+		if configFrame.macroEdit and PE.MacroStudio and PE.MacroStudio.BuildDefaultMacroForAction then
+			local macroText = PE.MacroStudio.BuildDefaultMacroForAction(action)
+			if macroText and macroText ~= "" then
+				configFrame.macroEdit:SetText(macroText)
+			end
+		end
 
-            if action.kind == "spell" then
-                macroText = string.format(
-                    "#showtooltip %s\n" ..
-                    "/run PE.Say(\"spell\", %d)\n" ..
-                    "/cast %s",
-                    action.name, action.id, action.name
-                )
-            elseif action.kind == "item" then
-                macroText = string.format(
-                    "#showtooltip item:%d\n" ..
-                    "/use item:%d\n" ..
-                    "/run PE.Say(\"item\", %d)",
-                    action.id, action.id, action.id
-                )
-            elseif action.kind == "emote" then
-                macroText = string.format(
-                    "/e %s\n" ..
-                    "/run PE.Say(\"emote\", \"%s\")",
-                    action.name, action.name
-                )
-            else
-                -- Fallback: treat as spellish
-                macroText = string.format(
-                    "#showtooltip %s\n" ..
-                    "/run PE.Say(\"%s\", %s)\n",
-                    tostring(action.name or "?"),
-                    tostring(action.kind or "spell"),
-                    tostring(action.id or "?")
-                )
-            end
-
-            configFrame.macroEdit:SetText(macroText)
-        end
     end
 
     loadButton:SetScript("OnClick", LoadActionByInput)
@@ -756,9 +727,103 @@ local function BuildConfigFrame()
 			macroCountLabel:SetFormattedText("%d/%d", len, MAX_MACRO_CHARS)
 		end
 	end)
+	
+	    ------------------------------------------------
+    -- Macro name field
+    ------------------------------------------------
+    local macroNameLabel, macroNameEdit
 
-	
-	
+    if UI and UI.CreateLabeledEdit then
+        macroNameLabel, macroNameEdit = UI.CreateLabeledEdit(actionPage, {
+            label = "Macro name:",
+            width = 220,
+            height = 20,
+            point = { "BOTTOMLEFT", macroScroll, "BOTTOMLEFT", 4, -26 },
+        })
+    else
+        macroNameLabel = actionPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        macroNameLabel:SetPoint("BOTTOMLEFT", macroScroll, "BOTTOMLEFT", 4, -26)
+        macroNameLabel:SetText("Macro name:")
+
+        macroNameEdit = CreateFrame("EditBox", nil, actionPage, "InputBoxTemplate")
+        macroNameEdit:SetSize(220, 20)
+        macroNameEdit:SetAutoFocus(false)
+        macroNameEdit:SetPoint("LEFT", macroNameLabel, "RIGHT", 8, 0)
+    end
+
+    StyleText(macroNameLabel, "LABEL")
+    configFrame.macroNameEdit = macroNameEdit
+
+    ------------------------------------------------
+    -- Macro studio buttons
+    ------------------------------------------------
+    local saveMacroBtn = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
+    saveMacroBtn:SetSize(120, 22)
+    saveMacroBtn:SetPoint("BOTTOMRIGHT", actionPage, "BOTTOMRIGHT", -4, 8)
+    saveMacroBtn:SetText("Save as Macro")
+
+    local pickupMacroBtn = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
+    pickupMacroBtn:SetSize(90, 22)
+    pickupMacroBtn:SetPoint("RIGHT", saveMacroBtn, "LEFT", -6, 0)
+    pickupMacroBtn:SetText("Pick Up")
+
+    local browseMacroBtn = CreateFrame("Button", nil, actionPage, "UIPanelButtonTemplate")
+    browseMacroBtn:SetSize(90, 22)
+    browseMacroBtn:SetPoint("RIGHT", pickupMacroBtn, "LEFT", -6, 0)
+    browseMacroBtn:SetText("Browse...")
+
+    ------------------------------------------------
+    -- Macro browser popup (created once)
+    ------------------------------------------------
+    if UI and UI.CreateMacroBrowser then
+        configFrame.macroBrowser = UI.CreateMacroBrowser({
+            parent = configFrame,
+            title  = "PersonaEngine – Macro Picker",
+            onMacroClick = function(name, body, icon)
+                if macroNameEdit then
+                    macroNameEdit:SetText(name or "")
+                end
+                if macroEdit then
+                    macroEdit:SetText(body or "")
+                end
+            end,
+        })
+    end
+
+    ------------------------------------------------
+    -- Button scripts
+    ------------------------------------------------
+    saveMacroBtn:SetScript("OnClick", function()
+        if not (PE and PE.MacroStudio and configFrame.macroEdit) then
+            return
+        end
+
+        local macroName = macroNameEdit and macroNameEdit:GetText() or ""
+        local body = configFrame.macroEdit:GetText() or ""
+        local icon = currentAction and currentAction.icon or nil
+
+        PE.MacroStudio.SaveMacro(macroName, body, icon)
+    end)
+
+    pickupMacroBtn:SetScript("OnClick", function()
+        if not (PE and PE.MacroStudio) then
+            return
+        end
+
+        local macroName = macroNameEdit and macroNameEdit:GetText() or ""
+        if macroName ~= "" then
+            PE.MacroStudio.PickupMacroByName(macroName)
+        end
+    end)
+
+    browseMacroBtn:SetScript("OnClick", function()
+        local browser = configFrame.macroBrowser
+        if browser and browser.Refresh then
+            browser:Refresh()
+            browser:Show()
+        end
+    end)
+
 
     --------------------------------------------------
     -- Save button (bottom-left)

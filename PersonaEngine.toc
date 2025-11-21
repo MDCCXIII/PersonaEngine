@@ -13,6 +13,7 @@ PE_Globals.lua
 PE_Core.lua
 PE_Actions.lua
 PE_NPCMemory.lua
+PE_MacroStudio.lua
 
 # Visuals / icons
 PE_VFX.lua
@@ -24,6 +25,8 @@ UI\PE_UILabeledEdit.lua
 UI\PE_UICheckbox.lua
 UI\PE_UIButton.lua
 UI\PE_UIMultilineEdit.lua
+UI\PE_UIMacroBrowser.lua
 
 # UI
 PE_ConfigUI.lua
+
