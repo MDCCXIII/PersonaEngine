@@ -16,22 +16,13 @@ end
 ----------------------------------------------------
 
 local TARGET_CHARACTER_NAME     = "Copporclang"
+local MONGOOSE_FURY_FULL_STACKS = 5          -- max stacks
+local MONGOOSE_FURY_SPELL_ID    = 259388     -- Mongoose Fury buff
 
--- Retail right now: Mongoose Fury maxes at 5 stacks. If Blizz changes it,
--- adjust this value.
-local MONGOOSE_FURY_FULL_STACKS = 5
-
--- SpellID for Mongoose Fury buff.
-local MONGOOSE_FURY_SPELL_ID    = 259388
-
--- Optional: your custom sound file. Replace with whatever path you actually use.
--- Set to nil if you only want bubble + VFX.
 local ALERT_SOUND = "Interface\\AddOns\\PersonaEngine\\Media\\Max! Capacitors.ogg"
 
 ----------------------------------------------------
 -- PHRASE SETS
--- Each set has entries for stacks 0..5.
--- Once a set is chosen at transition 0 -> 1, it is used until we go back to 0.
 ----------------------------------------------------
 
 local PHRASE_SETS = {
@@ -39,9 +30,7 @@ local PHRASE_SETS = {
         id = "FucksToGive",
         name = "Fucks To Give (Reversed)",
         lines = {
-            -- 0 stacks (reset)
             [0] = "Oh wait, everyone calm down, I found my fucking marbles, let's just think about this for a while...",
-            -- 1–5 stacks; conceptually 5 - stacks “fucks left”
             [1] = "Tasu, I'm running out of fucks to give! I've only got 4 left.",
             [2] = "There goes another, down to 3 fucks now...",
             [3] = "Complacency was never an option, 2 fucks remaining...",
@@ -67,24 +56,21 @@ local PHRASE_SETS = {
 -- STATE
 ----------------------------------------------------
 
+local alertedForCurrentBuff   = false
+local currentStacks           = 0
+local currentPhraseSetIndex   = nil
+
 local function IsCopporclang()
     local name = UnitName("player")
     return name == TARGET_CHARACTER_NAME
 end
-
--- For full-stack “special alert” logic
-local alertedForCurrentBuff = false
-
--- For bubble phrase logic
-local currentPhraseSetIndex = nil      -- which set we're using this 0→5 run
-local lastStacksForPhrase   = 0        -- last stack count we actually spoke about
 
 ----------------------------------------------------
 -- AURA HELPERS
 ----------------------------------------------------
 
 local function GetMongooseFuryStacks()
-    -- New-style aura API
+    -- New aura API
     if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
         local aura = C_UnitAuras.GetPlayerAuraBySpellID(MONGOOSE_FURY_SPELL_ID)
         if aura then
@@ -92,9 +78,9 @@ local function GetMongooseFuryStacks()
         end
     end
 
-    -- AuraUtil helper if present
+    -- AuraUtil helper
     if AuraUtil and AuraUtil.FindAuraByName then
-        local name, icon, count = AuraUtil.FindAuraByName("Mongoose Fury", "player", "HELPFUL")
+        local name, _, count = AuraUtil.FindAuraByName("Mongoose Fury", "player", "HELPFUL")
         return count or 0
     end
 
@@ -116,115 +102,82 @@ local function GetMongooseFuryStacks()
 end
 
 ----------------------------------------------------
--- PHRASE LOGIC
-----------------------------------------------------
-
-local function PickNewPhraseSetIndex()
-    if #PHRASE_SETS == 0 then
-        return nil
-    end
-    -- Simple RNG pick. If you later want weighting, do it here.
-    return math.random(1, #PHRASE_SETS)
-end
-
--- Return the text to show for a given stack count, or nil if nothing changed.
--- Handles:
---  - Selecting a phrase set at 0 -> 1
---  - Keeping that set while stacks > 0
---  - Playing the [0] line once when falling back to 0, then clearing the set
-local function GetPhraseForStacks(stacks)
-    stacks = stacks or 0
-
-    -- Avoid spamming when nothing changed
-    if stacks == lastStacksForPhrase then
-        return nil
-    end
-
-    -- Dropped back to 0 stacks
-    if stacks == 0 then
-        local text
-        if currentPhraseSetIndex then
-            local set = PHRASE_SETS[currentPhraseSetIndex]
-            if set and set.lines[0] then
-                text = set.lines[0]
-            end
-        end
-        currentPhraseSetIndex = nil
-        lastStacksForPhrase   = 0
-        return text or "" -- empty string will just hide the bubble
-    end
-
-    -- We have stacks (1–5)
-    if lastStacksForPhrase == 0 then
-        -- This is the transition 0 -> 1: pick a new set.
-        currentPhraseSetIndex = PickNewPhraseSetIndex()
-    end
-
-    lastStacksForPhrase = stacks
-
-    if not currentPhraseSetIndex then
-        return nil
-    end
-
-    local set = PHRASE_SETS[currentPhraseSetIndex]
-    if not set or not set.lines then
-        return nil
-    end
-
-    return set.lines[stacks]
-end
-
-----------------------------------------------------
--- BUBBLE UPDATE
-----------------------------------------------------
-
-local function UpdateMongooseBubble(stacks)
-    -- Outside combat we treat this as 0 stacks for bubble purposes.
-    if not UnitAffectingCombat("player") then
-        stacks = 0
-    end
-
-    local text = GetPhraseForStacks(stacks)
-    if text == nil then
-        -- No change, nothing to say.
-        return
-    end
-
-    if not (PE and PE.Bubble and PE.Bubble.Say) then
-        return
-    end
-
-    PE.Bubble.Say(text)
-end
-
-----------------------------------------------------
--- FULL-STACK EFFECT (sound + VFX)
+-- FULL-STACK EFFECT
 ----------------------------------------------------
 
 local function TriggerMongooseFullAlert()
-    -- Safety: only Copporclang, only in combat
-    if not IsCopporclang() then
-        return
-    end
-    if not UnitAffectingCombat("player") then
-        return
-    end
+    if not IsCopporclang() then return end
+    if not UnitAffectingCombat("player") then return end
 
-    -- 1) Play sound (if configured)
     if ALERT_SOUND and PlaySoundFile then
         PlaySoundFile(ALERT_SOUND, "SFX")
     end
 
-    -- 2) Trigger animation via PersonaEngine VFX
     if PE.VFX and PE.VFX.FlashIcon then
         PE.VFX.FlashIcon("MONGOOSE_FULL_ALERT")
     end
+end
 
-    -- 3) Optional: also send a line via PE.Say if you want public flavor text.
-    -- if PE.Say then
-    --     PE.Say("system", "MONGOOSE_FULL",
-    --         "Maximum stacks achieved. Strong suggestion: bite something dangerous.")
-    -- end
+----------------------------------------------------
+-- PHRASE / BUBBLE LOGIC
+----------------------------------------------------
+
+local function PickPhraseSetIndex()
+    local n = #PHRASE_SETS
+    if n == 0 then
+        return nil
+    end
+    return math.random(1, n)
+end
+
+local function SayInBubble(text)
+    if PE and PE.Bubble and PE.Bubble.Say then
+        PE.Bubble.Say(text or "")
+    end
+end
+
+-- Handle transitions from prevStacks -> newStacks
+local function HandleStackTransition(prevStacks, newStacks)
+    -- Normalize
+    prevStacks = prevStacks or 0
+    newStacks  = newStacks or 0
+
+    -- No change → nothing to do
+    if newStacks == prevStacks then
+        return
+    end
+
+    -- Reaching 0: play the [0] line once, then clear set and hide bubble
+    if newStacks == 0 then
+        if prevStacks > 0 and currentPhraseSetIndex then
+            local set  = PHRASE_SETS[currentPhraseSetIndex]
+            local line = set and set.lines[0]
+            if line and line ~= "" then
+                SayInBubble(line)
+            else
+                SayInBubble("")
+            end
+        else
+            SayInBubble("")
+        end
+        currentPhraseSetIndex = nil
+        return
+    end
+
+    -- Having stacks (1..5)
+    if prevStacks == 0 or not currentPhraseSetIndex then
+        currentPhraseSetIndex = PickPhraseSetIndex()
+    end
+
+    local set = currentPhraseSetIndex and PHRASE_SETS[currentPhraseSetIndex]
+    if not set then
+        return
+    end
+
+    local line = set.lines[newStacks]
+    if line and line ~= "" then
+        SayInBubble(line)
+    end
 end
 
 ----------------------------------------------------
@@ -238,7 +191,6 @@ frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("UNIT_AURA")
 
 frame:SetScript("OnEvent", function(self, event, unit, ...)
-    -- Hard gate: never do anything for other characters
     if not IsCopporclang() then
         self:UnregisterAllEvents()
         return
@@ -246,25 +198,28 @@ frame:SetScript("OnEvent", function(self, event, unit, ...)
 
     if event == "PLAYER_ENTERING_WORLD" then
         alertedForCurrentBuff = false
+        currentStacks         = 0
         currentPhraseSetIndex = nil
-        lastStacksForPhrase   = 0
-        UpdateMongooseBubble(0)
+        SayInBubble("")
         return
     end
 
     if event == "PLAYER_REGEN_ENABLED" then
-        -- Left combat; reset both full-stack alert and phrase cycle.
+        -- Left combat: collapse to 0 stacks
+        if currentStacks > 0 then
+            HandleStackTransition(currentStacks, 0)
+        else
+            SayInBubble("")
+        end
         alertedForCurrentBuff = false
+        currentStacks         = 0
         currentPhraseSetIndex = nil
-        lastStacksForPhrase   = 0
-        UpdateMongooseBubble(0)
         return
     end
 
     if event == "PLAYER_REGEN_DISABLED" then
-        -- Entered combat; next full stack and phrase set are fresh.
+        -- Entered combat; allow a new full-stack alert
         alertedForCurrentBuff = false
-        -- Keep bubble off until we actually have stacks.
         return
     end
 
@@ -275,10 +230,16 @@ frame:SetScript("OnEvent", function(self, event, unit, ...)
 
         local stacks = GetMongooseFuryStacks()
 
-        -- Update bubble text for stacks
-        UpdateMongooseBubble(stacks)
+        -- Treat "no buff" or "not in combat" as 0 for persona purposes
+        if not UnitAffectingCombat("player") then
+            stacks = 0
+        end
 
-        -- Full-stack special alert
+        -- Handle bubble + phrase logic
+        HandleStackTransition(currentStacks, stacks)
+        currentStacks = stacks
+
+        -- Full-stack alert (sound/VFX)
         if stacks >= MONGOOSE_FURY_FULL_STACKS and UnitAffectingCombat("player") then
             if not alertedForCurrentBuff then
                 alertedForCurrentBuff = true
@@ -291,17 +252,12 @@ frame:SetScript("OnEvent", function(self, event, unit, ...)
 end)
 
 ----------------------------------------------------
--- DEBUG: force test command
+-- /pemong debug command
 ----------------------------------------------------
 
 SLASH_PEMONGTEST1 = "/pemong"
 SlashCmdList.PEMONGTEST = function()
     print("[PersonaEngine] /pemong test triggered.")
-
-    -- For testing you can comment these two out:
-    -- if not IsCopporclang() then print("[PE] Not Copporclang."); return end
-    -- if not UnitAffectingCombat("player") then print("[PE] Not in combat."); return end
-
     TriggerMongooseFullAlert()
 end
 

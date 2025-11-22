@@ -22,15 +22,15 @@ local BUBBLE_TEXTURE_PATH = "Interface\\AddOns\\PersonaEngine\\Media\\PE_SpeechB
 ----------------------------------------------------
 
 local DEFAULTS = {
-    enabled    = true,
-    maxWidth   = 260,  -- pixel width cap
-    padding    = 12,   -- base padding (horizontal)
+    enabled   = true,
+    maxWidth  = 260,   -- pixel width cap
+    padding   = 12,    -- base padding (horizontal)
     -- Position relative to PlayerFrame's BOTTOMRIGHT
-    offsetX    = -40,  -- negative = bubble left of portrait
-    offsetY    = 40,
-    bgColor    = { 1, 1, 1, 0.85 },  -- white w/ alpha
-    textColor  = { 0, 0, 0, 1.0 },   -- black
-    wrapChars  = 50,                 -- char limit per line for wrapping
+    offsetX   = -40,   -- negative = bubble left of portrait
+    offsetY   = 40,
+    bgColor   = { 1, 1, 1, 0.85 },  -- white w/ alpha
+    textColor = { 0, 0, 0, 1.0 },   -- black
+    wrapChars = 50,                 -- char limit per line for wrapping
 }
 
 local frame
@@ -112,7 +112,7 @@ end
 
 local function CreateBubbleFrame()
     local settings = GetSettings()
-    local parent = PlayerFrame or UIParent
+    local parent   = PlayerFrame or UIParent
 
     -- Reuse existing frame if it exists, otherwise create
     if not frame then
@@ -154,6 +154,7 @@ local function CreateBubbleFrame()
     -- TEXT: use bigger vertical padding so text sits
     -- down inside the oval, not on the very top edge
     ------------------------------------------------
+    -- *** DO NOT TOUCH THESE LINES (per user request) ***
     local padX = (settings.padding or 12) + 50
     local padY = (settings.padding + 12) + 15   -- << tweak this if you want more/less headroom
 
@@ -179,8 +180,8 @@ local function CreateBubbleFrame()
         self:StopMovingOrSizing()
 
         local settings = GetSettings()
-        local parent = PlayerFrame or UIParent
-        local scale = self:GetEffectiveScale() / parent:GetEffectiveScale()
+        local parent   = PlayerFrame or UIParent
+        local scale    = self:GetEffectiveScale() / parent:GetEffectiveScale()
 
         -- Save offset from parent's BOTTOMRIGHT
         local right   = self:GetRight()   * scale
@@ -198,6 +199,46 @@ local function CreateBubbleFrame()
 end
 
 ----------------------------------------------------
+-- Fade animations
+----------------------------------------------------
+
+local function EnsureAnimations()
+    if not frame then return end
+
+    if not frame.fadeIn then
+        local ag = frame:CreateAnimationGroup("PEBubbleFadeIn")
+        local a  = ag:CreateAnimation("Alpha")
+        a:SetOrder(1)
+        a:SetFromAlpha(0)
+        a:SetToAlpha(1)
+        a:SetDuration(0.15)
+
+        ag:SetScript("OnPlay", function()
+            frame:SetAlpha(0)
+            frame:Show()
+        end)
+
+        frame.fadeIn = ag
+    end
+
+    if not frame.fadeOut then
+        local ag = frame:CreateAnimationGroup("PEBubbleFadeOut")
+        local a  = ag:CreateAnimation("Alpha")
+        a:SetOrder(1)
+        a:SetFromAlpha(1)
+        a:SetToAlpha(0)
+        a:SetDuration(0.20)
+
+        ag:SetScript("OnFinished", function()
+            frame:Hide()
+            frame:SetAlpha(1)
+        end)
+
+        frame.fadeOut = ag
+    end
+end
+
+----------------------------------------------------
 -- Internal: resize to match text
 ----------------------------------------------------
 
@@ -206,6 +247,7 @@ local function ResizeToText()
     local settings = GetSettings()
 
     -- Must match the padX/padY logic in CreateBubbleFrame
+    -- *** DO NOT TOUCH THESE LINES (per user request) ***
     local padX = (settings.padding or 12) + 50
     local padY = (settings.padding + 12) + 20 -- must match CreateBubbleFrame
 
@@ -237,7 +279,7 @@ end
 function Bubble.Reanchor()
     if not frame then return end
     local settings = GetSettings()
-    local parent = PlayerFrame or UIParent
+    local parent   = PlayerFrame or UIParent
 
     frame:ClearAllPoints()
     frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT",
@@ -248,7 +290,15 @@ end
 function Bubble.Say(text)
     local settings = GetSettings()
     if not settings.enabled then
-        if frame then frame:Hide() end
+        if frame then
+            EnsureAnimations()
+            if frame:IsShown() and frame.fadeOut then
+                if frame.fadeIn then frame.fadeIn:Stop() end
+                frame.fadeOut:Play()
+            else
+                frame:Hide()
+            end
+        end
         return
     end
 
@@ -261,8 +311,16 @@ function Bubble.Say(text)
         CreateBubbleFrame()
     end
 
+    EnsureAnimations()
+
+    -- Empty text → fade out / hide
     if not text or text == "" then
-        frame:Hide()
+        if frame:IsShown() and frame.fadeOut then
+            if frame.fadeIn then frame.fadeIn:Stop() end
+            frame.fadeOut:Play()
+        else
+            frame:Hide()
+        end
         return
     end
 
@@ -272,14 +330,27 @@ function Bubble.Say(text)
     ResizeToText()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
-    frame:Show()
+
+    if frame.fadeIn then
+        if frame.fadeOut then frame.fadeOut:Stop() end
+        frame.fadeIn:Play()
+    else
+        frame:Show()
+    end
 end
 
 function Bubble.SetEnabled(isEnabled)
     local settings = GetSettings()
     settings.enabled = not not isEnabled
+
     if not settings.enabled and frame then
-        frame:Hide()
+        EnsureAnimations()
+        if frame:IsShown() and frame.fadeOut then
+            if frame.fadeIn then frame.fadeIn:Stop() end
+            frame.fadeOut:Play()
+        else
+            frame:Hide()
+        end
     end
 end
 
@@ -293,7 +364,7 @@ function Bubble.ShowConfigPreview()
     end
 
     local settings = GetSettings()
-    isConfigMode = true
+    isConfigMode   = true
     frame:EnableMouse(true)
 
     local previewText = "PersonaEngine Bubble\n\nDrag me where you want me."
@@ -303,7 +374,14 @@ function Bubble.ShowConfigPreview()
     ResizeToText()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
-    frame:Show()
+
+    EnsureAnimations()
+    if frame.fadeIn then
+        if frame.fadeOut then frame.fadeOut:Stop() end
+        frame.fadeIn:Play()
+    else
+        frame:Show()
+    end
 
     print("|cff00ff00[PersonaEngine]|r Bubble config mode: drag the bubble, then release to save position. Type /pebubble off to exit.")
 end
