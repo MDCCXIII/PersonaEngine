@@ -154,8 +154,8 @@ local function CreateBubbleFrame()
     -- TEXT: use bigger vertical padding so text sits
     -- down inside the oval, not on the very top edge
     ------------------------------------------------
-    local padX = settings.padding
-    local padY = settings.padding + 12   -- << tweak this if you want more/less headroom
+    local padX = (settings.padding or 12) + 50
+    local padY = (settings.padding + 12) + 15   -- << tweak this if you want more/less headroom
 
     if not textFS then
         textFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -206,8 +206,8 @@ local function ResizeToText()
     local settings = GetSettings()
 
     -- Must match the padX/padY logic in CreateBubbleFrame
-    local padX = settings.padding
-    local padY = settings.padding + 12
+    local padX = (settings.padding or 12) + 50
+    local padY = (settings.padding + 12) + 20 -- must match CreateBubbleFrame
 
     frame:SetWidth(settings.maxWidth)
     textFS:SetWidth(settings.maxWidth - padX * 2)
