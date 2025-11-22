@@ -150,11 +150,13 @@ local function CreateBubbleFrame()
         bubbleTex:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
     end
 
-    -- >>> NEW: separate horizontal/vertical padding for text
+    ------------------------------------------------
+    -- TEXT: use bigger vertical padding so text sits
+    -- down inside the oval, not on the very top edge
+    ------------------------------------------------
     local padX = settings.padding
-    local padY = settings.padding + 8   -- extra vertical headroom inside oval
+    local padY = settings.padding + 12   -- << tweak this if you want more/less headroom
 
-    -- Text
     if not textFS then
         textFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     end
@@ -164,7 +166,6 @@ local function CreateBubbleFrame()
     textFS:ClearAllPoints()
     textFS:SetPoint("TOPLEFT",  frame, "TOPLEFT",  padX, -padY)
     textFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -padX, -padY)
-    -- <<<
 
     -- Dragging (config mode only)
     frame:RegisterForDrag("LeftButton")
@@ -204,19 +205,17 @@ local function ResizeToText()
     if not frame or not textFS then return end
     local settings = GetSettings()
 
-    -- >>> use the same padX/padY as CreateBubbleFrame
+    -- Must match the padX/padY logic in CreateBubbleFrame
     local padX = settings.padding
-    local padY = settings.padding + 8
-    -- <<<
+    local padY = settings.padding + 12
 
     frame:SetWidth(settings.maxWidth)
     textFS:SetWidth(settings.maxWidth - padX * 2)
 
     local h = textFS:GetStringHeight()
 
-    -- >>> more vertical margin so text stays fully inside oval
+    -- Add generous vertical margin so text never touches the top/edges
     frame:SetHeight(h + padY * 2)
-    -- <<<
 end
 
 ----------------------------------------------------
