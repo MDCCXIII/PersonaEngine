@@ -168,25 +168,30 @@ function UI.BuildMacroStudioTab(configFrame, page)
     configFrame.selectedIconTexture = 134400
 
     iconHelp:SetScript("OnEnter", function(self)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Icon & primary action", 1, 1, 1, true)
-        GameTooltip:AddLine("• Type an icon name like |cffffff00inv_misc_bag_03|r or a file ID.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("• Shift-click a spell or item into this box to copy its name.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("• Click |cffffff00Load|r to bind a primary spell or item.", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("• Click the icon to open the full icon selector.", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    iconHelp:SetScript("OnLeave", function()
-        if GameTooltip then GameTooltip:Hide() end
-    end)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Macro icon", 1, 1, 1, true)
+
+		-- Icon-first behaviour
+		GameTooltip:AddLine("• Type an icon texture name (e.g. |cffffff00inv_misc_bag_03|r) or a file ID.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("• Shift-click a spell or item to copy its ICON here.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("• Click |cffffff00Load|r to optionally pull trigger settings from that spell/item.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("• Click the icon to open the full icon selector.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("• Phrases are saved per |cffffff00macro name|r, not per spell.", 0.8, 0.8, 0.8, true)
+
+		GameTooltip:Show()
+	end)
+	iconHelp:SetScript("OnLeave", function()
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+
 
     local iconInfoText = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     iconInfoText:SetPoint("TOPLEFT", iconLabel, "BOTTOMLEFT", 0, -4)
     iconInfoText:SetWidth(420)
     iconInfoText:SetJustifyH("LEFT")
     StyleText(iconInfoText, "HINT")
-    iconInfoText:SetText("|cffff2020No icon / action provided.|r")
+    iconInfoText:SetText("|cffff2020No icon selected.|r")
 
     ------------------------------------------------
     -- Autocomplete + icon picker
@@ -450,55 +455,84 @@ function UI.BuildMacroStudioTab(configFrame, page)
     end
 
     local function LoadConfigForCurrentAction()
-        if not currentAction then
-            iconInfoText:SetText("|cffff2020No icon / action provided.|r")
-            ApplyConfigToWidgets(nil)
-            return
-        end
+		if not currentAction then
+			iconInfoText:SetText("|cffff2020No icon selected.|r")
+			ApplyConfigToWidgets(nil)
+			return
+		end
 
-        local cfg = PE.GetOrCreateActionConfig(currentAction.kind, currentAction.id)
-        if PE.FormatActionSummary then
-            iconInfoText:SetText(PE.FormatActionSummary(currentAction))
-        else
-            iconInfoText:SetFormattedText(
-                "Action: |cffffff00%s|r (ID %s)",
-                tostring(currentAction.name or "?"),
-                tostring(currentAction.id or "?")
-            )
-        end
+		local cfg = PE.GetOrCreateActionConfig(currentAction.kind, currentAction.id)
 
-        ApplyConfigToWidgets(cfg)
-    end
+		-- Just explain where the ICON came from; phrases are still macro-based.
+		if PE.FormatActionSummary then
+			iconInfoText:SetFormattedText(
+				"Icon from %s",
+				PE.FormatActionSummary(currentAction)
+			)
+		else
+			iconInfoText:SetFormattedText(
+				"Icon from |cffffff00%s|r (ID %s)",
+				tostring(currentAction.name or "?"),
+				tostring(currentAction.id or "?")
+			)
+		end
+
+		ApplyConfigToWidgets(cfg)
+	end
+
 
     local function LoadActionByInput()
-        local txt = iconEdit:GetText()
-        if not txt or txt == "" then
-            iconInfoText:SetText("|cffff2020No icon / action provided.|r")
-            currentAction = nil
-            ApplyConfigToWidgets(nil)
-            return
-        end
+		local txt = trim(iconEdit:GetText())
 
-        local action = GetActionByInput(txt)
+		if not txt or txt == "" then
+			-- Clear everything
+			configFrame.selectedIconTexture = 134400
+			iconTexture:SetTexture(134400)
+			currentAction = nil
+			iconInfoText:SetText("|cffff2020No icon selected.|r")
+			ApplyConfigToWidgets(nil)
+			return
+		end
 
-        if not action or (action.kind == "emote") then
-            currentAction = nil
-            iconInfoText:SetText("|cffffff00Icon selected.|r No spell or item bound as a primary action.")
-            ApplyConfigToWidgets(nil)
-            return
-        end
+		-- 1) Numeric → treat as texture file ID
+		local asNumber = tonumber(txt)
+		if asNumber then
+			configFrame.selectedIconTexture = asNumber
+			iconTexture:SetTexture(asNumber)
+			currentAction = nil
+			iconInfoText:SetFormattedText("Icon file ID: |cffffff00%d|r", asNumber)
+			ApplyConfigToWidgets(nil)
+			return
+		end
 
-        currentAction = action
+		-- 2) Try to resolve as a spell/item/emote via PE.ResolveActionFromInput
+		local action = GetActionByInput(txt)
 
-        if not configFrame.selectedIconTexture then
-            configFrame.selectedIconTexture = action.icon or 134400
-            iconTexture:SetTexture(configFrame.selectedIconTexture)
-        end
+		-- If we got a usable action (spell/item), use its icon AND let it
+		-- drive trigger logic; phrases still save per macro name.
+		if action and action.kind ~= "emote" then
+			currentAction = action
 
-        LoadConfigForCurrentAction()
-    end
+			configFrame.selectedIconTexture = action.icon or 134400
+			iconTexture:SetTexture(configFrame.selectedIconTexture)
 
-    loadButton:SetScript("OnClick", LoadActionByInput)
+			LoadConfigForCurrentAction()
+			return
+		end
+
+		-- 3) Fallback: treat the text as a texture path / icon name only.
+		-- We don't try to validate the path here; WoW will just show a blank
+		-- icon if it's bogus.
+		configFrame.selectedIconTexture = nil
+		iconTexture:SetTexture(txt)
+		currentAction = nil
+
+		iconInfoText:SetFormattedText("Icon texture: |cffffff00%s|r", txt)
+		ApplyConfigToWidgets(nil)
+	end
+
+	loadButton:SetScript("OnClick", LoadActionByInput)
+
 
     ------------------------------------------------
     -- Read UI -> cfg
