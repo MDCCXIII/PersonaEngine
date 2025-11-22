@@ -28,6 +28,7 @@ UI\PE_UIMultilineEdit.lua
 UI\PE_UIMacroBrowser.lua
 UI\PE_UIIcons.lua
 UI\PE_UIMacroStudioTab.lua
+UI\PE_Bubble.lua
 
 # UI
 PE_ConfigUI.lua
