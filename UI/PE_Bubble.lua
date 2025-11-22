@@ -22,21 +22,26 @@ local BUBBLE_TEXTURE_PATH = "Interface\\AddOns\\PersonaEngine\\Media\\PE_SpeechB
 ----------------------------------------------------
 
 local DEFAULTS = {
-    enabled   = true,
-    maxWidth  = 260,   -- pixel width cap
-    padding   = 12,    -- base padding (horizontal)
+    enabled        = true,
+    maxWidth       = 260,  -- pixel width cap
+    padding        = 12,   -- base padding (horizontal)
     -- Position relative to PlayerFrame's BOTTOMRIGHT
-    offsetX   = -40,   -- negative = bubble left of portrait
-    offsetY   = 40,
-    bgColor   = { 1, 1, 1, 0.85 },  -- white w/ alpha
-    textColor = { 0, 0, 0, 1.0 },   -- black
-    wrapChars = 50,                 -- char limit per line for wrapping
+    offsetX        = -40,  -- negative = bubble left of portrait
+    offsetY        = 40,
+    bgColor        = { 1, 1, 1, 0.85 },  -- white w/ alpha
+    textColor      = { 0, 0, 0, 1.0 },   -- black
+    wrapChars      = 50,                 -- char limit per line for wrapping
+    displaySeconds = 3,                  -- how long a message stays before fading out
 }
 
 local frame
 local bubbleTex
 local textFS
 local isConfigMode = false
+
+-- For lifetime handling
+local hideToken = 0
+local lastText  = nil
 
 ----------------------------------------------------
 -- Settings helpers
@@ -73,6 +78,7 @@ local function GetSettings()
     if s.offsetX == nil then s.offsetX = DEFAULTS.offsetX end
     if s.offsetY == nil then s.offsetY = DEFAULTS.offsetY end
     if not s.wrapChars then s.wrapChars = DEFAULTS.wrapChars end
+    if not s.displaySeconds then s.displaySeconds = DEFAULTS.displaySeconds end
 
     -- Robust color defaults
     s.bgColor   = copyColor(s.bgColor,   DEFAULTS.bgColor)
@@ -238,6 +244,60 @@ local function EnsureAnimations()
     end
 end
 
+local function PlayFadeInIfNeeded()
+    if not frame then return end
+    EnsureAnimations()
+
+    -- If already visible and not fully hidden, don't spam fade-in
+    if frame:IsShown() then
+        if frame.fadeOut then frame.fadeOut:Stop() end
+        return
+    end
+
+    if frame.fadeOut then frame.fadeOut:Stop() end
+    if frame.fadeIn then
+        frame.fadeIn:Play()
+    else
+        frame:Show()
+    end
+end
+
+local function PlayFadeOut()
+    if not frame then return end
+    EnsureAnimations()
+
+    if frame.fadeIn then frame.fadeIn:Stop() end
+    if frame.fadeOut then
+        frame.fadeOut:Play()
+    else
+        frame:Hide()
+    end
+end
+
+----------------------------------------------------
+-- Lifetime scheduling
+----------------------------------------------------
+
+local function ScheduleAutoHide(seconds)
+    if not frame then return end
+    seconds = seconds or 0
+    hideToken = hideToken + 1
+    local myToken = hideToken
+
+    if seconds <= 0 then
+        -- immediate
+        PlayFadeOut()
+        return
+    end
+
+    C_Timer.After(seconds, function()
+        if hideToken ~= myToken then
+            return -- superseded by a newer message
+        end
+        PlayFadeOut()
+    end)
+end
+
 ----------------------------------------------------
 -- Internal: resize to match text
 ----------------------------------------------------
@@ -289,16 +349,14 @@ end
 
 function Bubble.Say(text)
     local settings = GetSettings()
+
+    -- Disabled → hide and bail
     if not settings.enabled then
         if frame then
-            EnsureAnimations()
-            if frame:IsShown() and frame.fadeOut then
-                if frame.fadeIn then frame.fadeIn:Stop() end
-                frame.fadeOut:Play()
-            else
-                frame:Hide()
-            end
+            hideToken = hideToken + 1 -- cancel any pending hides
+            PlayFadeOut()
         end
+        lastText = nil
         return
     end
 
@@ -311,32 +369,31 @@ function Bubble.Say(text)
         CreateBubbleFrame()
     end
 
-    EnsureAnimations()
-
-    -- Empty text → fade out / hide
+    -- Empty text = request to hide now
     if not text or text == "" then
-        if frame:IsShown() and frame.fadeOut then
-            if frame.fadeIn then frame.fadeIn:Stop() end
-            frame.fadeOut:Play()
-        else
-            frame:Hide()
-        end
+        hideToken = hideToken + 1 -- cancel future hides
+        lastText  = nil
+        PlayFadeOut()
         return
     end
 
     local wrapped = WrapToCharLimit(text, settings.wrapChars or DEFAULTS.wrapChars)
+
+    -- If text didn't actually change, just refresh timer and bail
+    if wrapped == lastText and frame and frame:IsShown() then
+        ScheduleAutoHide(settings.displaySeconds or DEFAULTS.displaySeconds)
+        return
+    end
+
+    lastText = wrapped
 
     textFS:SetText(wrapped)
     ResizeToText()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
 
-    if frame.fadeIn then
-        if frame.fadeOut then frame.fadeOut:Stop() end
-        frame.fadeIn:Play()
-    else
-        frame:Show()
-    end
+    PlayFadeInIfNeeded()
+    ScheduleAutoHide(settings.displaySeconds or DEFAULTS.displaySeconds)
 end
 
 function Bubble.SetEnabled(isEnabled)
@@ -344,13 +401,8 @@ function Bubble.SetEnabled(isEnabled)
     settings.enabled = not not isEnabled
 
     if not settings.enabled and frame then
-        EnsureAnimations()
-        if frame:IsShown() and frame.fadeOut then
-            if frame.fadeIn then frame.fadeIn:Stop() end
-            frame.fadeOut:Play()
-        else
-            frame:Hide()
-        end
+        hideToken = hideToken + 1
+        PlayFadeOut()
     end
 end
 
@@ -375,13 +427,9 @@ function Bubble.ShowConfigPreview()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
 
-    EnsureAnimations()
-    if frame.fadeIn then
-        if frame.fadeOut then frame.fadeOut:Stop() end
-        frame.fadeIn:Play()
-    else
-        frame:Show()
-    end
+    -- Cancel any auto-hide, show and keep it up until user turns config off
+    hideToken = hideToken + 1
+    PlayFadeInIfNeeded()
 
     print("|cff00ff00[PersonaEngine]|r Bubble config mode: drag the bubble, then release to save position. Type /pebubble off to exit.")
 end
