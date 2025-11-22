@@ -39,10 +39,10 @@ local bubbleTex
 local textFS
 local isConfigMode = false
 
--- Lifetime + queue
-local hideToken   = 0   -- cancels pending hide timers
-local lastText    = nil -- last wrapped text actually shown
-local pendingText = nil -- raw text queued to show after current finishes
+-- Multi-line state
+local lines      = {}   -- { { text = "...", expireAt = number }, ... }
+local maxLines   = 5    -- max visible lines in the bubble
+local updateTick = 0
 
 ----------------------------------------------------
 -- Settings helpers
@@ -126,15 +126,93 @@ local function ComputeDisplaySecondsForText(text)
         return base
     end
 
-    local len   = #text    -- ASCII-safe; your lines are plain text
+    local len   = #text
     local units = math.ceil(len / 10)
 
     return base + (units * per10)
 end
 
 ----------------------------------------------------
+-- Internal: resize to match text
+----------------------------------------------------
+
+function ResizeToText()
+    if not frame or not textFS then return end
+    local settings = GetSettings()
+
+    -- Must match the padX/padY logic in CreateBubbleFrame
+    -- *** DO NOT TOUCH THESE LINES (per user request) ***
+    local padX = (settings.padding or 12) + 50
+    local padY = (settings.padding + 12) + 20 -- must match CreateBubbleFrame
+
+    frame:SetWidth(settings.maxWidth)
+    textFS:SetWidth(settings.maxWidth - padX * 2)
+
+    local h = textFS:GetStringHeight()
+
+    -- Add generous vertical margin so text never touches the top/edges
+    frame:SetHeight(h + padY * 2)
+end
+
+----------------------------------------------------
 -- Frame creation / rebuild
 ----------------------------------------------------
+
+local function UpdateLinesDisplay()
+    if not frame or not textFS then return end
+
+    if #lines == 0 then
+        frame:Hide()
+        return
+    end
+
+    local parts = {}
+    for i = 1, #lines do
+        table.insert(parts, lines[i].text)
+    end
+
+    textFS:SetText(table.concat(parts, "\n"))
+    ResizeToText()
+    Bubble.RefreshAppearance()
+    Bubble.Reanchor()
+    frame:Show()
+end
+
+local function OnBubbleUpdate(self, elapsed)
+    if isConfigMode then
+        return -- don't auto-expire in config preview
+    end
+
+    if #lines == 0 then
+        self:Hide()
+        return
+    end
+
+    updateTick = updateTick + elapsed
+    if updateTick < 0.1 then
+        return
+    end
+    updateTick = 0
+
+    local now     = GetTime()
+    local changed = false
+
+    -- Cull expired lines from oldest to newest
+    for i = #lines, 1, -1 do
+        if lines[i].expireAt <= now then
+            table.remove(lines, i)
+            changed = true
+        end
+    end
+
+    if changed then
+        if #lines == 0 then
+            self:Hide()
+            return
+        end
+        UpdateLinesDisplay()
+    end
+end
 
 local function CreateBubbleFrame()
     local settings = GetSettings()
@@ -221,85 +299,8 @@ local function CreateBubbleFrame()
         Bubble.Reanchor()
     end)
 
+    frame:SetScript("OnUpdate", OnBubbleUpdate)
     frame:Hide()
-end
-
-----------------------------------------------------
--- Lifetime scheduling (no animations, just Show/Hide)
-----------------------------------------------------
-
-local function CancelAutoHide()
-    hideToken = hideToken + 1
-end
-
--- Internal helper: show a given raw text *right now* and schedule its hide
-local function ShowMessageNow(rawText)
-    if not rawText or rawText == "" then
-        return
-    end
-
-    if not frame or not textFS then
-        CreateBubbleFrame()
-    end
-
-    local settings = GetSettings()
-    local wrapped  = WrapToCharLimit(rawText, settings.wrapChars or DEFAULTS.wrapChars)
-
-    lastText = wrapped
-
-    textFS:SetText(wrapped)
-    ResizeToText()
-    Bubble.RefreshAppearance()
-    Bubble.Reanchor()
-
-    frame:Show()
-
-    CancelAutoHide()
-    local secs = ComputeDisplaySecondsForText(wrapped)
-    -- schedule hiding / advancing queue
-    hideToken = hideToken + 1
-    local myToken = hideToken
-
-    C_Timer.After(secs, function()
-        if hideToken ~= myToken then
-            return -- superseded by newer message / manual cancel
-        end
-
-        -- If there's a pending message, show ONLY the latest and drop the rest.
-        if pendingText and pendingText ~= "" then
-            local nextText = pendingText
-            pendingText    = nil
-            ShowMessageNow(nextText) -- recurse into the next message
-        else
-            -- No more pending messages; fully hide.
-            lastText = nil
-            if frame then
-                frame:Hide()
-            end
-        end
-    end)
-end
-
-----------------------------------------------------
--- Internal: resize to match text
-----------------------------------------------------
-
-function ResizeToText()
-    if not frame or not textFS then return end
-    local settings = GetSettings()
-
-    -- Must match the padX/padY logic in CreateBubbleFrame
-    -- *** DO NOT TOUCH THESE LINES (per user request) ***
-    local padX = (settings.padding or 12) + 50
-    local padY = (settings.padding + 12) + 20 -- must match CreateBubbleFrame
-
-    frame:SetWidth(settings.maxWidth)
-    textFS:SetWidth(settings.maxWidth - padX * 2)
-
-    local h = textFS:GetStringHeight()
-
-    -- Add generous vertical margin so text never touches the top/edges
-    frame:SetHeight(h + padY * 2)
 end
 
 ----------------------------------------------------
@@ -334,9 +335,7 @@ function Bubble.Say(text)
 
     -- Disabled → hide and bail
     if not settings.enabled then
-        CancelAutoHide()
-        lastText    = nil
-        pendingText = nil
+        wipe(lines)
         if frame then
             frame:Hide()
         end
@@ -352,28 +351,31 @@ function Bubble.Say(text)
         CreateBubbleFrame()
     end
 
-    -- Empty text = explicit hide request (and clear queue)
+    -- Empty text = explicit hide request (and clear lines)
     if not text or text == "" then
-        CancelAutoHide()
-        lastText    = nil
-        pendingText = nil
+        wipe(lines)
         if frame then
             frame:Hide()
         end
         return
     end
 
-    -- If nothing is currently shown, display immediately.
-    if not frame:IsShown() then
-        pendingText = nil  -- clear any stale queued message
-        ShowMessageNow(text)
-        return
+    local wrapped = WrapToCharLimit(text, settings.wrapChars or DEFAULTS.wrapChars)
+    local now     = GetTime()
+    local secs    = ComputeDisplaySecondsForText(wrapped)
+
+    -- Insert new line at bottom
+    table.insert(lines, {
+        text     = wrapped,
+        expireAt = now + secs,
+    })
+
+    -- Enforce max lines (oldest first)
+    while #lines > maxLines do
+        table.remove(lines, 1)
     end
 
-    -- If something is already on screen:
-    -- we only care about the *latest* attempt.
-    pendingText = text
-    -- current bubble will finish, then ShowMessageNow(pendingText) will fire
+    UpdateLinesDisplay()
 end
 
 function Bubble.SetEnabled(isEnabled)
@@ -381,9 +383,7 @@ function Bubble.SetEnabled(isEnabled)
     settings.enabled = not not isEnabled
 
     if not settings.enabled and frame then
-        CancelAutoHide()
-        lastText    = nil
-        pendingText = nil
+        wipe(lines)
         frame:Hide()
     end
 end
@@ -412,15 +412,14 @@ function Bubble.ShowConfigPreview(numLines)
     local previewText = "PersonaEngine Bubble\n\n" .. testBlock
     previewText = WrapToCharLimit(previewText, settings.wrapChars or DEFAULTS.wrapChars)
 
+    -- Config preview uses its own text, independent of `lines`
     textFS:SetText(previewText)
     ResizeToText()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
 
     -- Config mode: no auto-hide; user dismisses with /pebubble off
-    CancelAutoHide()
-    lastText    = nil
-    pendingText = nil
+    wipe(lines)
     frame:Show()
 
     print(string.format(
@@ -436,7 +435,6 @@ SlashCmdList.PEBUBBLE = function(msg)
 
     if trimmed:lower() == "off" then
         isConfigMode = false
-        CancelAutoHide()
         if frame then
             frame:EnableMouse(false)
             frame:Hide()
