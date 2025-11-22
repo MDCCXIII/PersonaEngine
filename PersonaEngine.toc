@@ -1,7 +1,7 @@
 ## Interface: 110205
 ## Title: Persona Engine
 ## Notes: Copporclang's personality core (macro-only chatter)
-## Author: Tasu Copporbane
+## Author: Tasu Copporclang
 ## Version: 1.0
 ## IconTexture: Interface\AddOns\PersonaEngine\references\persona_brain_icon.tga
 
@@ -31,3 +31,6 @@ UI\PE_UIMacroStudioTab.lua
 
 # UI
 PE_ConfigUI.lua
+
+# Copporclang specific
+PE_CopporclangAlerts.lua

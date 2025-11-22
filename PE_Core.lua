@@ -985,6 +985,70 @@ function Macros.GetUsage()
 end
 
 ----------------------------------------------------
+-- /mousepos – anchor-friendly coordinates
+----------------------------------------------------
+
+local mouseFrame = CreateFrame("Frame")
+local showing = false
+
+mouseFrame:SetScript("OnUpdate", function(self, elapsed)
+    if not showing then return end
+
+    local x, y = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+
+    x = x / scale
+    y = y / scale
+
+    local uiWidth  = UIParent:GetWidth()
+    local uiHeight = UIParent:GetHeight()
+
+    -- Center-relative offsets
+    local cx = x - uiWidth  / 2
+    local cy = y - uiHeight / 2
+
+    if not self.textFrame then
+        self.textFrame = CreateFrame("Frame", nil, UIParent)
+        self.textFrame:SetSize(260, 52)
+        self.textFrame:SetPoint("TOP", UIParent, "TOP", 0, -60)
+
+        local bg = self.textFrame:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(true)
+        bg:SetColorTexture(0, 0, 0, 0.55)
+
+        local t = self.textFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        t:SetPoint("CENTER")
+        t:SetJustifyH("LEFT")
+        self.text = t
+    end
+
+    self.textFrame:Show()
+    self.text:SetText(string.format(
+        "BL:  x=%.1f  y=%.1f\nCN:  x=%.1f  y=%.1f",
+        x, y, cx, cy
+    ))
+end)
+
+SLASH_MOUSEPOS1 = "/mousepos"
+SlashCmdList.MOUSEPOS = function(msg)
+    showing = not showing
+
+    if showing then
+        print("|cff00ff00[PE]|r MousePos: showing anchor coords.")
+        mouseFrame.textFrame = nil
+        mouseFrame:Show()
+    else
+        print("|cffff0000[PE]|r MousePos: hidden.")
+        if mouseFrame.textFrame then
+            mouseFrame.textFrame:Hide()
+        end
+        mouseFrame:Hide()
+    end
+end
+
+
+
+----------------------------------------------------
 -- Module registration
 ----------------------------------------------------
 
