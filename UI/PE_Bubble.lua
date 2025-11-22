@@ -14,24 +14,51 @@ end
 PE.Bubble = PE.Bubble or {}
 local Bubble = PE.Bubble
 
--- --------------------------------------------------
--- Defaults (can be overridden by DB settings)
--- --------------------------------------------------
+-- Path to your speech-bubble PNG
+local BUBBLE_TEXTURE_PATH = "Interface\\AddOns\\PersonaEngine\\Media\\PE_SpeechBubble"
+
+----------------------------------------------------
+-- Defaults
+----------------------------------------------------
+
 local DEFAULTS = {
-    enabled   = true,
-    maxWidth  = 260,
-    padding   = 12,
-    -- Position is relative to UIParent bottom-left
-    offsetX   = 500,
-    offsetY   = 350,
-    bgColor   = { 1, 1, 1, 0.8 },  -- white, slightly transparent
-    textColor = { 0, 0, 0, 1.0 },  -- black text
+    enabled    = true,
+    maxWidth   = 260,  -- pixel width cap
+    padding    = 12,
+    -- Position relative to PlayerFrame's BOTTOMRIGHT
+    offsetX    = -40,  -- negative = bubble left of portrait
+    offsetY    = 40,
+    bgColor    = { 1, 1, 1, 0.85 },  -- white w/ alpha
+    textColor  = { 0, 0, 0, 1.0 },   -- black
+    wrapChars  = 50,                 -- char limit per line for wrapping
 }
 
-local frame, textFS, tailTex
+local frame
+local bubbleTex
+local textFS
 local isConfigMode = false
 
--- Small helper to get settings table safely
+----------------------------------------------------
+-- Settings helpers
+----------------------------------------------------
+
+local function copyColor(src, def)
+    if type(src) ~= "table" then src = {} end
+
+    local r = tonumber(src[1])
+    local g = tonumber(src[2])
+    local b = tonumber(src[3])
+    local a = tonumber(src[4])
+
+    if not r or not g or not b then
+        r, g, b, a = def[1], def[2], def[3], def[4]
+    else
+        a = a or def[4]
+    end
+
+    return { r, g, b, a }
+end
+
 local function GetSettings()
     PE.db = PE.db or PersonaEngineDB or {}
     PE.db.settings = PE.db.settings or {}
@@ -39,75 +66,103 @@ local function GetSettings()
 
     local s = PE.db.settings.bubble
 
-    -- Fill missing fields with defaults (non-destructive)
-    for k, v in pairs(DEFAULTS) do
-        if s[k] == nil then
-            if type(v) == "table" then
-                local copy = {}
-                for i, x in ipairs(v) do copy[i] = x end
-                s[k] = copy
-            else
-                s[k] = v
-            end
-        end
-    end
+    -- Simple scalar defaults
+    if s.enabled == nil then s.enabled = DEFAULTS.enabled end
+    if not s.maxWidth then s.maxWidth = DEFAULTS.maxWidth end
+    if not s.padding then s.padding = DEFAULTS.padding end
+    if s.offsetX == nil then s.offsetX = DEFAULTS.offsetX end
+    if s.offsetY == nil then s.offsetY = DEFAULTS.offsetY end
+    if not s.wrapChars then s.wrapChars = DEFAULTS.wrapChars end
+
+    -- Robust color defaults
+    s.bgColor   = copyColor(s.bgColor,   DEFAULTS.bgColor)
+    s.textColor = copyColor(s.textColor, DEFAULTS.textColor)
 
     return s
 end
 
--- --------------------------------------------------
--- Frame creation
--- --------------------------------------------------
+----------------------------------------------------
+-- Word-wrap helper
+----------------------------------------------------
+
+local function WrapToCharLimit(text, limit)
+    if not text or limit <= 0 then return text end
+
+    local out = {}
+    local lineLen = 0
+
+    for chunk in text:gmatch("%S+%s*") do
+        local len = #chunk
+        if lineLen + len > limit and lineLen > 0 then
+            table.insert(out, "\n")
+            lineLen = 0
+        end
+        table.insert(out, chunk)
+        lineLen = lineLen + len
+    end
+
+    local result = table.concat(out)
+    result = result:gsub("%s+\n", "\n")
+    return result
+end
+
+----------------------------------------------------
+-- Frame creation / rebuild
+----------------------------------------------------
+
 local function CreateBubbleFrame()
-    if frame then return end
-
     local settings = GetSettings()
-    local parent = UIParent
+    local parent = PlayerFrame or UIParent
 
-    frame = CreateFrame("Frame", "PE_PersonaBubbleFrame", parent, "BackdropTemplate")
+    -- Reuse existing frame if it exists, otherwise create
+    if not frame then
+        frame = _G["PE_PersonaBubbleFrame"]
+    end
+    if not frame then
+        frame = CreateFrame("Frame", "PE_PersonaBubbleFrame", parent)
+    else
+        frame:SetParent(parent)
+    end
+
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
-    frame:EnableMouse(false)
     frame:SetMovable(true)
+    frame:EnableMouse(false)
 
-    -- Simple rounded-ish bubble using tooltip background/border.
-    frame:SetBackdrop({
-        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile     = true, tileSize = 16, edgeSize = 16,
-        insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-
-    local bgR, bgG, bgB, bgA = unpack(settings.bgColor)
-    frame:SetBackdropColor(bgR, bgG, bgB, bgA)
-    frame:SetBackdropBorderColor(0, 0, 0, 1)
-
-    -- Anchor relative to UIParent using saved offsets
+    -- Anchor: bubble stays attached by its BOTTOMRIGHT to the portrait area,
+    -- and grows left as it gets wider.
     frame:ClearAllPoints()
-    frame:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", settings.offsetX, settings.offsetY)
+    frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT",
+        settings.offsetX, settings.offsetY)
 
-    -- Tail texture (little rectangle standing in for a tail);
-    -- you can swap this out for custom art later.
-    tailTex = frame:CreateTexture(nil, "BACKGROUND")
-    tailTex:SetTexture("Interface\\CHATFRAME\\ChatFrameBackground")
-    tailTex:SetWidth(18)
-    tailTex:SetHeight(18)
-    tailTex:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 24, -8)
-    tailTex:SetVertexColor(bgR, bgG, bgB, bgA)
+    -- Bubble texture (includes tail)
+    if not bubbleTex then
+        bubbleTex = frame:CreateTexture(nil, "BACKGROUND")
+    end
+
+    bubbleTex:ClearAllPoints()
+    bubbleTex:SetAllPoints(frame)
+
+    -- Try to use the custom speech bubble art
+    bubbleTex:SetTexture(BUBBLE_TEXTURE_PATH)
+
+    -- If that failed (wrong path / missing file), fall back to a generic box
+    if not bubbleTex:GetTexture() then
+        bubbleTex:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+    end
 
     -- Text
-    textFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    if not textFS then
+        textFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    end
     textFS:SetJustifyH("LEFT")
     textFS:SetJustifyV("TOP")
-
-    local txtR, txtG, txtB, txtA = unpack(settings.textColor)
-    textFS:SetTextColor(txtR, txtG, txtB, txtA)
-
-    textFS:SetPoint("TOPLEFT", frame, "TOPLEFT", settings.padding, -settings.padding)
-    textFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -settings.padding, -settings.padding)
     textFS:SetWordWrap(true)
+    textFS:ClearAllPoints()
+    textFS:SetPoint("TOPLEFT",  frame, "TOPLEFT",  settings.padding, -settings.padding)
+    textFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -settings.padding, -settings.padding)
 
-    -- Dragging: only active in config mode
+    -- Dragging (config mode only)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
         if isConfigMode then
@@ -118,17 +173,17 @@ local function CreateBubbleFrame()
         if not isConfigMode then return end
         self:StopMovingOrSizing()
 
-        -- Save position relative to UIParent
         local settings = GetSettings()
-        local parent = UIParent
+        local parent = PlayerFrame or UIParent
         local scale = self:GetEffectiveScale() / parent:GetEffectiveScale()
 
-        local left   = self:GetLeft() * scale
-        local bottom = self:GetBottom() * scale
-        local pLeft  = parent:GetLeft() * scale
-        local pBottom= parent:GetBottom() * scale
+        -- Save offset from parent's BOTTOMRIGHT
+        local right   = self:GetRight()   * scale
+        local bottom  = self:GetBottom()  * scale
+        local pRight  = parent:GetRight() * scale
+        local pBottom = parent:GetBottom()* scale
 
-        settings.offsetX = left - pLeft
+        settings.offsetX = right - pRight
         settings.offsetY = bottom - pBottom
 
         Bubble.Reanchor()
@@ -137,9 +192,10 @@ local function CreateBubbleFrame()
     frame:Hide()
 end
 
--- --------------------------------------------------
--- Internal: Resize to current text
--- --------------------------------------------------
+----------------------------------------------------
+-- Internal: resize to match text
+----------------------------------------------------
+
 local function ResizeToText()
     if not frame or not textFS then return end
     local settings = GetSettings()
@@ -149,43 +205,35 @@ local function ResizeToText()
 
     local h = textFS:GetStringHeight()
     frame:SetHeight(h + settings.padding * 2)
-
-    if tailTex then
-        tailTex:ClearAllPoints()
-        tailTex:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 24, -8)
-    end
 end
 
--- --------------------------------------------------
+----------------------------------------------------
 -- Public API
--- --------------------------------------------------
+----------------------------------------------------
 
 function Bubble.RefreshAppearance()
-    if not frame then return end
+    if not frame or not bubbleTex or not textFS then return end
     local settings = GetSettings()
 
-    local bgR, bgG, bgB, bgA = unpack(settings.bgColor)
-    frame:SetBackdropColor(bgR, bgG, bgB, bgA)
-    if tailTex then
-        tailTex:SetVertexColor(bgR, bgG, bgB, bgA)
-    end
+    local bg = settings.bgColor or DEFAULTS.bgColor
+    local br, bgc, bb, ba = bg[1], bg[2], bg[3], bg[4]
+    bubbleTex:SetVertexColor(br, bgc, bb, ba)
 
-    local txtR, txtG, txtB, txtA = unpack(settings.textColor)
-    textFS:SetTextColor(txtR, txtG, txtB, txtA)
+    local tc = settings.textColor or DEFAULTS.textColor
+    textFS:SetTextColor(tc[1], tc[2], tc[3], tc[4])
 end
 
 function Bubble.Reanchor()
     if not frame then return end
     local settings = GetSettings()
-    local parent = UIParent
+    local parent = PlayerFrame or UIParent
 
     frame:ClearAllPoints()
-    frame:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT",
+    frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT",
         settings.offsetX or DEFAULTS.offsetX,
         settings.offsetY or DEFAULTS.offsetY)
 end
 
--- Main entry: show a line of persona text in the bubble
 function Bubble.Say(text)
     local settings = GetSettings()
     if not settings.enabled then
@@ -194,11 +242,11 @@ function Bubble.Say(text)
     end
 
     if isConfigMode then
-        -- Don’t stomp over the config preview
+        -- Don't clobber the config preview
         return
     end
 
-    if not frame then
+    if not frame or not textFS then
         CreateBubbleFrame()
     end
 
@@ -207,14 +255,15 @@ function Bubble.Say(text)
         return
     end
 
-    textFS:SetText(text)
+    local wrapped = WrapToCharLimit(text, settings.wrapChars or DEFAULTS.wrapChars)
+
+    textFS:SetText(wrapped)
     ResizeToText()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
     frame:Show()
 end
 
--- Enable/disable from settings UI
 function Bubble.SetEnabled(isEnabled)
     local settings = GetSettings()
     settings.enabled = not not isEnabled
@@ -223,30 +272,31 @@ function Bubble.SetEnabled(isEnabled)
     end
 end
 
--- --------------------------------------------------
--- Config Preview: /pebubble
--- --------------------------------------------------
+----------------------------------------------------
+-- Config preview: /pebubble
+----------------------------------------------------
 
 function Bubble.ShowConfigPreview()
-    local settings = GetSettings()
-
-    if not frame then
+    if not frame or not textFS then
         CreateBubbleFrame()
     end
 
+    local settings = GetSettings()
     isConfigMode = true
     frame:EnableMouse(true)
 
-    textFS:SetText("PersonaEngine Bubble\n\nDrag me where you want me.")
+    local previewText = "PersonaEngine Bubble\n\nDrag me where you want me."
+    previewText = WrapToCharLimit(previewText, settings.wrapChars or DEFAULTS.wrapChars)
+
+    textFS:SetText(previewText)
     ResizeToText()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
     frame:Show()
 
-    print("|cff00ff00[PersonaEngine]|r Bubble config mode: drag the bubble, then release to save position.")
+    print("|cff00ff00[PersonaEngine]|r Bubble config mode: drag the bubble, then release to save position. Type /pebubble off to exit.")
 end
 
--- Slash command: /pebubble
 SLASH_PEBUBBLE1 = "/pebubble"
 SlashCmdList.PEBUBBLE = function(msg)
     if msg and msg:lower() == "off" then
