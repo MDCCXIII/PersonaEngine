@@ -14,7 +14,7 @@ end
 PE.Bubble = PE.Bubble or {}
 local Bubble = PE.Bubble
 
--- Path to your speech-bubble PNG (TGA/BLP on disk)
+-- Path to your speech-bubble PNG
 local BUBBLE_TEXTURE_PATH = "Interface\\AddOns\\PersonaEngine\\Media\\PE_SpeechBubble"
 
 ----------------------------------------------------
@@ -24,7 +24,7 @@ local BUBBLE_TEXTURE_PATH = "Interface\\AddOns\\PersonaEngine\\Media\\PE_SpeechB
 local DEFAULTS = {
     enabled    = true,
     maxWidth   = 260,  -- pixel width cap
-    padding    = 14,   -- base padding; we’ll add extra vertical padding
+    padding    = 12,   -- base padding (horizontal)
     -- Position relative to PlayerFrame's BOTTOMRIGHT
     offsetX    = -40,  -- negative = bubble left of portrait
     offsetY    = 40,
@@ -66,6 +66,7 @@ local function GetSettings()
 
     local s = PE.db.settings.bubble
 
+    -- Simple scalar defaults
     if s.enabled == nil then s.enabled = DEFAULTS.enabled end
     if not s.maxWidth then s.maxWidth = DEFAULTS.maxWidth end
     if not s.padding then s.padding = DEFAULTS.padding end
@@ -73,6 +74,7 @@ local function GetSettings()
     if s.offsetY == nil then s.offsetY = DEFAULTS.offsetY end
     if not s.wrapChars then s.wrapChars = DEFAULTS.wrapChars end
 
+    -- Robust color defaults
     s.bgColor   = copyColor(s.bgColor,   DEFAULTS.bgColor)
     s.textColor = copyColor(s.textColor, DEFAULTS.textColor)
 
@@ -80,7 +82,7 @@ local function GetSettings()
 end
 
 ----------------------------------------------------
--- Word-wrap helper (by character count)
+-- Word-wrap helper
 ----------------------------------------------------
 
 local function WrapToCharLimit(text, limit)
@@ -112,6 +114,7 @@ local function CreateBubbleFrame()
     local settings = GetSettings()
     local parent = PlayerFrame or UIParent
 
+    -- Reuse existing frame if it exists, otherwise create
     if not frame then
         frame = _G["PE_PersonaBubbleFrame"]
     end
@@ -126,6 +129,8 @@ local function CreateBubbleFrame()
     frame:SetMovable(true)
     frame:EnableMouse(false)
 
+    -- Anchor: bubble stays attached by its BOTTOMRIGHT to the portrait area,
+    -- and grows left as it gets wider.
     frame:ClearAllPoints()
     frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT",
         settings.offsetX, settings.offsetY)
@@ -136,15 +141,20 @@ local function CreateBubbleFrame()
     end
     bubbleTex:ClearAllPoints()
     bubbleTex:SetAllPoints(frame)
+
+    -- Try to use the custom speech bubble art
     bubbleTex:SetTexture(BUBBLE_TEXTURE_PATH)
+
+    -- If that failed (wrong path / missing file), fall back to a generic box
     if not bubbleTex:GetTexture() then
         bubbleTex:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
     end
 
-    -- Text: give more vertical padding so we sit comfortably inside the oval.
+    -- >>> NEW: separate horizontal/vertical padding for text
     local padX = settings.padding
-    local padY = settings.padding + 6  -- extra vertical padding
+    local padY = settings.padding + 8   -- extra vertical headroom inside oval
 
+    -- Text
     if not textFS then
         textFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     end
@@ -154,6 +164,7 @@ local function CreateBubbleFrame()
     textFS:ClearAllPoints()
     textFS:SetPoint("TOPLEFT",  frame, "TOPLEFT",  padX, -padY)
     textFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -padX, -padY)
+    -- <<<
 
     -- Dragging (config mode only)
     frame:RegisterForDrag("LeftButton")
@@ -170,6 +181,7 @@ local function CreateBubbleFrame()
         local parent = PlayerFrame or UIParent
         local scale = self:GetEffectiveScale() / parent:GetEffectiveScale()
 
+        -- Save offset from parent's BOTTOMRIGHT
         local right   = self:GetRight()   * scale
         local bottom  = self:GetBottom()  * scale
         local pRight  = parent:GetRight() * scale
@@ -192,16 +204,19 @@ local function ResizeToText()
     if not frame or not textFS then return end
     local settings = GetSettings()
 
+    -- >>> use the same padX/padY as CreateBubbleFrame
     local padX = settings.padding
-    local padY = settings.padding + 6  -- must match CreateBubbleFrame
+    local padY = settings.padding + 8
+    -- <<<
 
     frame:SetWidth(settings.maxWidth)
     textFS:SetWidth(settings.maxWidth - padX * 2)
 
     local h = textFS:GetStringHeight()
 
-    -- Add generous vertical margin so text never touches the top/edges
+    -- >>> more vertical margin so text stays fully inside oval
     frame:SetHeight(h + padY * 2)
+    -- <<<
 end
 
 ----------------------------------------------------
@@ -213,7 +228,8 @@ function Bubble.RefreshAppearance()
     local settings = GetSettings()
 
     local bg = settings.bgColor or DEFAULTS.bgColor
-    bubbleTex:SetVertexColor(bg[1], bg[2], bg[3], bg[4])
+    local br, bgc, bb, ba = bg[1], bg[2], bg[3], bg[4]
+    bubbleTex:SetVertexColor(br, bgc, bb, ba)
 
     local tc = settings.textColor or DEFAULTS.textColor
     textFS:SetTextColor(tc[1], tc[2], tc[3], tc[4])
@@ -238,6 +254,7 @@ function Bubble.Say(text)
     end
 
     if isConfigMode then
+        -- Don't clobber the config preview
         return
     end
 
