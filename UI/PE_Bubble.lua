@@ -4,7 +4,7 @@
 -- ##################################################
 
 local MODULE = "Bubble"
-local PE = PE
+local PE     = PE
 
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
@@ -31,7 +31,7 @@ local DEFAULTS = {
     bgColor        = { 1, 1, 1, 0.85 },  -- white w/ alpha
     textColor      = { 0, 0, 0, 1.0 },   -- black
     wrapChars      = 50,                 -- char limit per line for wrapping
-    displaySeconds = 3,                  -- how long a message stays before fading out
+    displaySeconds = 2.3,                -- base time; extra added per characters
 }
 
 local frame
@@ -39,9 +39,10 @@ local bubbleTex
 local textFS
 local isConfigMode = false
 
--- For lifetime handling
-local hideToken = 0
-local lastText  = nil
+-- Lifetime + queue
+local hideToken   = 0   -- cancels pending hide timers
+local lastText    = nil -- last wrapped text actually shown
+local pendingText = nil -- raw text queued to show after current finishes
 
 ----------------------------------------------------
 -- Settings helpers
@@ -110,6 +111,25 @@ local function WrapToCharLimit(text, limit)
     local result = table.concat(out)
     result = result:gsub("%s+\n", "\n")
     return result
+end
+
+----------------------------------------------------
+-- Display-time helper: 2.3s + 0.3s per 10 characters
+----------------------------------------------------
+
+local function ComputeDisplaySecondsForText(text)
+    local settings = GetSettings()
+    local base     = settings.displaySeconds or DEFAULTS.displaySeconds -- 2.3 by default
+    local per10    = 0.3
+
+    if not text or text == "" then
+        return base
+    end
+
+    local len   = #text    -- ASCII-safe; your lines are plain text
+    local units = math.ceil(len / 10)
+
+    return base + (units * per10)
 end
 
 ----------------------------------------------------
@@ -205,96 +225,58 @@ local function CreateBubbleFrame()
 end
 
 ----------------------------------------------------
--- Fade animations
+-- Lifetime scheduling (no animations, just Show/Hide)
 ----------------------------------------------------
 
-local function EnsureAnimations()
-    if not frame then return end
-
-    if not frame.fadeIn then
-        local ag = frame:CreateAnimationGroup("PEBubbleFadeIn")
-        local a  = ag:CreateAnimation("Alpha")
-        a:SetOrder(1)
-        a:SetFromAlpha(0)
-        a:SetToAlpha(1)
-        a:SetDuration(0.15)
-
-        ag:SetScript("OnPlay", function()
-            frame:SetAlpha(0)
-            frame:Show()
-        end)
-
-        frame.fadeIn = ag
-    end
-
-    if not frame.fadeOut then
-        local ag = frame:CreateAnimationGroup("PEBubbleFadeOut")
-        local a  = ag:CreateAnimation("Alpha")
-        a:SetOrder(1)
-        a:SetFromAlpha(1)
-        a:SetToAlpha(0)
-        a:SetDuration(0.20)
-
-        ag:SetScript("OnFinished", function()
-            frame:Hide()
-            frame:SetAlpha(1)
-        end)
-
-        frame.fadeOut = ag
-    end
+local function CancelAutoHide()
+    hideToken = hideToken + 1
 end
 
-local function PlayFadeInIfNeeded()
-    if not frame then return end
-    EnsureAnimations()
-
-    -- If already visible and not fully hidden, don't spam fade-in
-    if frame:IsShown() then
-        if frame.fadeOut then frame.fadeOut:Stop() end
+-- Internal helper: show a given raw text *right now* and schedule its hide
+local function ShowMessageNow(rawText)
+    if not rawText or rawText == "" then
         return
     end
 
-    if frame.fadeOut then frame.fadeOut:Stop() end
-    if frame.fadeIn then
-        frame.fadeIn:Play()
-    else
-        frame:Show()
+    if not frame or not textFS then
+        CreateBubbleFrame()
     end
-end
 
-local function PlayFadeOut()
-    if not frame then return end
-    EnsureAnimations()
+    local settings = GetSettings()
+    local wrapped  = WrapToCharLimit(rawText, settings.wrapChars or DEFAULTS.wrapChars)
 
-    if frame.fadeIn then frame.fadeIn:Stop() end
-    if frame.fadeOut then
-        frame.fadeOut:Play()
-    else
-        frame:Hide()
-    end
-end
+    lastText = wrapped
 
-----------------------------------------------------
--- Lifetime scheduling
-----------------------------------------------------
+    textFS:SetText(wrapped)
+    ResizeToText()
+    Bubble.RefreshAppearance()
+    Bubble.Reanchor()
 
-local function ScheduleAutoHide(seconds)
-    if not frame then return end
-    seconds = seconds or 0
+    frame:Show()
+
+    CancelAutoHide()
+    local secs = ComputeDisplaySecondsForText(wrapped)
+    -- schedule hiding / advancing queue
     hideToken = hideToken + 1
     local myToken = hideToken
 
-    if seconds <= 0 then
-        -- immediate
-        PlayFadeOut()
-        return
-    end
-
-    C_Timer.After(seconds, function()
+    C_Timer.After(secs, function()
         if hideToken ~= myToken then
-            return -- superseded by a newer message
+            return -- superseded by newer message / manual cancel
         end
-        PlayFadeOut()
+
+        -- If there's a pending message, show ONLY the latest and drop the rest.
+        if pendingText and pendingText ~= "" then
+            local nextText = pendingText
+            pendingText    = nil
+            ShowMessageNow(nextText) -- recurse into the next message
+        else
+            -- No more pending messages; fully hide.
+            lastText = nil
+            if frame then
+                frame:Hide()
+            end
+        end
     end)
 end
 
@@ -302,7 +284,7 @@ end
 -- Internal: resize to match text
 ----------------------------------------------------
 
-local function ResizeToText()
+function ResizeToText()
     if not frame or not textFS then return end
     local settings = GetSettings()
 
@@ -352,16 +334,17 @@ function Bubble.Say(text)
 
     -- Disabled → hide and bail
     if not settings.enabled then
+        CancelAutoHide()
+        lastText    = nil
+        pendingText = nil
         if frame then
-            hideToken = hideToken + 1 -- cancel any pending hides
-            PlayFadeOut()
+            frame:Hide()
         end
-        lastText = nil
         return
     end
 
+    -- Don't let combat chatter stomp the config preview
     if isConfigMode then
-        -- Don't clobber the config preview
         return
     end
 
@@ -369,31 +352,28 @@ function Bubble.Say(text)
         CreateBubbleFrame()
     end
 
-    -- Empty text = request to hide now
+    -- Empty text = explicit hide request (and clear queue)
     if not text or text == "" then
-        hideToken = hideToken + 1 -- cancel future hides
-        lastText  = nil
-        PlayFadeOut()
+        CancelAutoHide()
+        lastText    = nil
+        pendingText = nil
+        if frame then
+            frame:Hide()
+        end
         return
     end
 
-    local wrapped = WrapToCharLimit(text, settings.wrapChars or DEFAULTS.wrapChars)
-
-    -- If text didn't actually change, just refresh timer and bail
-    if wrapped == lastText and frame and frame:IsShown() then
-        ScheduleAutoHide(settings.displaySeconds or DEFAULTS.displaySeconds)
+    -- If nothing is currently shown, display immediately.
+    if not frame:IsShown() then
+        pendingText = nil  -- clear any stale queued message
+        ShowMessageNow(text)
         return
     end
 
-    lastText = wrapped
-
-    textFS:SetText(wrapped)
-    ResizeToText()
-    Bubble.RefreshAppearance()
-    Bubble.Reanchor()
-
-    PlayFadeInIfNeeded()
-    ScheduleAutoHide(settings.displaySeconds or DEFAULTS.displaySeconds)
+    -- If something is already on screen:
+    -- we only care about the *latest* attempt.
+    pendingText = text
+    -- current bubble will finish, then ShowMessageNow(pendingText) will fire
 end
 
 function Bubble.SetEnabled(isEnabled)
@@ -401,16 +381,18 @@ function Bubble.SetEnabled(isEnabled)
     settings.enabled = not not isEnabled
 
     if not settings.enabled and frame then
-        hideToken = hideToken + 1
-        PlayFadeOut()
+        CancelAutoHide()
+        lastText    = nil
+        pendingText = nil
+        frame:Hide()
     end
 end
 
 ----------------------------------------------------
--- Config preview: /pebubble
+-- Config preview: /pebubble (with optional test lines)
 ----------------------------------------------------
 
-function Bubble.ShowConfigPreview()
+function Bubble.ShowConfigPreview(numLines)
     if not frame or not textFS then
         CreateBubbleFrame()
     end
@@ -419,7 +401,15 @@ function Bubble.ShowConfigPreview()
     isConfigMode   = true
     frame:EnableMouse(true)
 
-    local previewText = "PersonaEngine Bubble\n\nDrag me where you want me."
+    -- Optional numeric argument: how many "1234567890" chunks to show
+    numLines = tonumber(numLines) or 1
+    if numLines < 1 then numLines = 1 end
+    if numLines > 20 then numLines = 20 end
+
+    local chunk     = "1234567890"
+    local testBlock = chunk:rep(numLines)
+
+    local previewText = "PersonaEngine Bubble\n\n" .. testBlock
     previewText = WrapToCharLimit(previewText, settings.wrapChars or DEFAULTS.wrapChars)
 
     textFS:SetText(previewText)
@@ -427,23 +417,35 @@ function Bubble.ShowConfigPreview()
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
 
-    -- Cancel any auto-hide, show and keep it up until user turns config off
-    hideToken = hideToken + 1
-    PlayFadeInIfNeeded()
+    -- Config mode: no auto-hide; user dismisses with /pebubble off
+    CancelAutoHide()
+    lastText    = nil
+    pendingText = nil
+    frame:Show()
 
-    print("|cff00ff00[PersonaEngine]|r Bubble config mode: drag the bubble, then release to save position. Type /pebubble off to exit.")
+    print(string.format(
+        "|cff00ff00[PersonaEngine]|r Bubble config mode: %d test chunk(s). Drag the bubble, then release to save position. Type /pebubble off to exit.",
+        numLines
+    ))
 end
 
 SLASH_PEBUBBLE1 = "/pebubble"
 SlashCmdList.PEBUBBLE = function(msg)
-    if msg and msg:lower() == "off" then
+    local raw     = msg or ""
+    local trimmed = strtrim(raw)
+
+    if trimmed:lower() == "off" then
         isConfigMode = false
+        CancelAutoHide()
         if frame then
             frame:EnableMouse(false)
+            frame:Hide()
         end
         print("|cff00ff00[PersonaEngine]|r Bubble config mode disabled.")
         return
     end
 
-    Bubble.ShowConfigPreview()
+    -- If they passed a number, use it as testLines; otherwise default to 1
+    local numLines = tonumber(trimmed) or 1
+    Bubble.ShowConfigPreview(numLines)
 end
