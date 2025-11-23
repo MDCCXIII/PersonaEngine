@@ -23,7 +23,7 @@ local BUBBLE_TEXTURE_PATH = "Interface\\AddOns\\PersonaEngine\\Media\\PE_SpeechB
 
 local DEFAULTS = {
     enabled        = true,
-    maxWidth       = 260,  -- pixel width cap
+    maxWidth       = 260,  -- pixel width cap (clamped below)
     padding        = 12,   -- base padding (horizontal)
     -- Position relative to PlayerFrame's BOTTOMRIGHT
     offsetX        = -40,  -- negative = bubble left of portrait
@@ -74,7 +74,13 @@ local function GetSettings()
 
     -- Simple scalar defaults
     if s.enabled == nil then s.enabled = DEFAULTS.enabled end
+
     if not s.maxWidth then s.maxWidth = DEFAULTS.maxWidth end
+    -- Clamp maxWidth so bad saved values can't create screen-wide marshmallows
+    if s.maxWidth < 180 or s.maxWidth > 420 then
+        s.maxWidth = DEFAULTS.maxWidth
+    end
+
     if not s.padding then s.padding = DEFAULTS.padding end
     if s.offsetX == nil then s.offsetX = DEFAULTS.offsetX end
     if s.offsetY == nil then s.offsetY = DEFAULTS.offsetY end
@@ -90,27 +96,64 @@ end
 
 ----------------------------------------------------
 -- Word-wrap helper
+-- Wrap at spaces when possible, but also break over-long "words"
+-- (e.g. long digit strings) so they don't force an ultra-wide bubble.
 ----------------------------------------------------
 
 local function WrapToCharLimit(text, limit)
     if not text or limit <= 0 then return text end
 
-    local out = {}
-    local lineLen = 0
+    local linesOut = {}
 
-    for chunk in text:gmatch("%S+%s*") do
-        local len = #chunk
-        if lineLen + len > limit and lineLen > 0 then
-            table.insert(out, "\n")
-            lineLen = 0
+    -- Handle existing newlines by wrapping each logical line separately
+    for logicalLine in tostring(text):gmatch("([^\n]*)\n?") do
+        if logicalLine == "" and #linesOut > 0 then
+            -- preserve explicit blank line
+            table.insert(linesOut, "")
+        elseif logicalLine ~= "" then
+            local outParts = {}
+            local lineLen  = 0
+
+            for rawWord in logicalLine:gmatch("%S+") do
+                local word = rawWord
+                local wlen = #word
+
+                -- If the word itself is longer than the limit, hard-break it
+                while wlen > limit do
+                    local chunk = word:sub(1, limit)
+                    word        = word:sub(limit + 1)
+                    wlen        = #word
+
+                    if lineLen > 0 then
+                        table.insert(outParts, "\n")
+                        lineLen = 0
+                    end
+
+                    table.insert(outParts, chunk)
+                end
+
+                if wlen > 0 then
+                    -- If this word would overflow the current line, wrap first
+                    if lineLen > 0 and (lineLen + 1 + wlen) > limit then
+                        table.insert(outParts, "\n")
+                        lineLen = 0
+                    end
+
+                    if lineLen > 0 then
+                        table.insert(outParts, " ")
+                        lineLen = lineLen + 1
+                    end
+
+                    table.insert(outParts, word)
+                    lineLen = lineLen + wlen
+                end
+            end
+
+            table.insert(linesOut, table.concat(outParts))
         end
-        table.insert(out, chunk)
-        lineLen = lineLen + len
     end
 
-    local result = table.concat(out)
-    result = result:gsub("%s+\n", "\n")
-    return result
+    return table.concat(linesOut, "\n")
 end
 
 ----------------------------------------------------
@@ -150,8 +193,18 @@ function ResizeToText()
 
     local h = textFS:GetStringHeight()
 
-    -- Add generous vertical margin so text never touches the top/edges
-    frame:SetHeight(h + padY * 2)
+    -- Count logical lines to give extra breathing room
+    local text      = textFS:GetText() or ""
+    local lineCount = 1
+    for _ in text:gmatch("\n") do
+        lineCount = lineCount + 1
+    end
+
+    local extraYPerLine = 4
+    local extraY        = math.max(0, lineCount - 1) * extraYPerLine
+
+    -- Add vertical margin so text never hugs the top/bottom edges
+    frame:SetHeight(h + padY * 2 + extraY)
 end
 
 ----------------------------------------------------
@@ -390,6 +443,8 @@ end
 
 ----------------------------------------------------
 -- Config preview: /pebubble (with optional test lines)
+-- Now uses one "1234567890" per *line* (not a single huge word),
+-- so wrapping and sizing stay sane.
 ----------------------------------------------------
 
 function Bubble.ShowConfigPreview(numLines)
@@ -401,15 +456,20 @@ function Bubble.ShowConfigPreview(numLines)
     isConfigMode   = true
     frame:EnableMouse(true)
 
-    -- Optional numeric argument: how many "1234567890" chunks to show
     numLines = tonumber(numLines) or 1
     if numLines < 1 then numLines = 1 end
     if numLines > 20 then numLines = 20 end
 
-    local chunk     = "1234567890"
-    local testBlock = chunk:rep(numLines)
+    local chunk = "1234567890"
+    local testLines = {}
+    for i = 1, numLines do
+        table.insert(testLines, chunk)
+    end
 
+    local testBlock   = table.concat(testLines, "\n")
     local previewText = "PersonaEngine Bubble\n\n" .. testBlock
+
+    -- We still run it through the wrapper so we can see realistic behavior.
     previewText = WrapToCharLimit(previewText, settings.wrapChars or DEFAULTS.wrapChars)
 
     -- Config preview uses its own text, independent of `lines`
@@ -418,12 +478,11 @@ function Bubble.ShowConfigPreview(numLines)
     Bubble.RefreshAppearance()
     Bubble.Reanchor()
 
-    -- Config mode: no auto-hide; user dismisses with /pebubble off
     wipe(lines)
     frame:Show()
 
     print(string.format(
-        "|cff00ff00[PersonaEngine]|r Bubble config mode: %d test chunk(s). Drag the bubble, then release to save position. Type /pebubble off to exit.",
+        "|cff00ff00[PersonaEngine]|r Bubble config mode: %d test line(s). Drag the bubble, then release to save position. Type /pebubble off to exit.",
         numLines
     ))
 end
@@ -443,7 +502,6 @@ SlashCmdList.PEBUBBLE = function(msg)
         return
     end
 
-    -- If they passed a number, use it as testLines; otherwise default to 1
     local numLines = tonumber(trimmed) or 1
     Bubble.ShowConfigPreview(numLines)
 end
