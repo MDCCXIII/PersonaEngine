@@ -305,7 +305,7 @@ function PersonaEngine_Button_OnTooltip(tt)
         tt:AddLine("|cffffffffCtrl+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
     else
 		tt:AddLine(" ")
-        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0)
+        tt:AddLine("|cffff0000[Developer Mode]|r", 1, 0.9, 0)
 
         local luaOn = (GetCVar("scriptErrors") == "1")
         local luaText = luaOn and "|cff00ff00Lua errors: ON|r" or "|cffff0000Lua errors: OFF|r"

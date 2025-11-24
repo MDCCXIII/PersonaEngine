@@ -8,8 +8,6 @@ if not PE then
     PE = {}
 end
 
-local DevMode = false
-
 ----------------------------------------------------
 -- Logging Level + core logger
 ----------------------------------------------------
@@ -281,7 +279,7 @@ PE.Words          = PE.Words or {}
 ----------------------------------------------------
 
 PersonaEngineDB                    = PersonaEngineDB or {}
-PersonaEngineDB.DevMode            = DevMode or PersonaEngineDB.DevMode or false
+PersonaEngineDB.DevMode            = PersonaEngineDB.DevMode or false
 PersonaEngineDB.profiles           = PersonaEngineDB.profiles or {}
 PersonaEngineDB.currentProfileKey  = PersonaEngineDB.currentProfileKey or "Copporclang_Default"
 
@@ -300,6 +298,28 @@ PersonaEngine_ButtonDefaults = {
 }
 
 PersonaEngineDB.button = PersonaEngineDB.button or {}
+
+----------------------------------------------------
+-- Dev mode check
+----------------------------------------------------
+
+local function IsDevMode()
+    -- Prefer a function if you have one
+    if type(PE.IsDevMode) == "function" then
+        return PE.IsDevMode()
+    end
+    -- Or a simple flag if you use that
+    if type(PE.DEV_MODE) == "boolean" then
+        return PE.DEV_MODE
+    end
+    return false
+end
+
+-- Central dev-mode helper (used by other modules)
+function PE.IsDevMode()
+    return PersonaEngineDB and PersonaEngineDB.DevMode == true
+end
+
 
 ----------------------------------------------------
 -- Legacy SR fields (until fully replaced)

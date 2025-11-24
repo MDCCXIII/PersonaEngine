@@ -36,3 +36,6 @@ PE_MinimalUI.lua
 
 # Copporclang specific
 PE_CopporclangAlerts.lua
+
+#slash commands
+PE_Slash.lua
