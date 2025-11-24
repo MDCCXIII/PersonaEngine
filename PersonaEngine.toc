@@ -32,6 +32,7 @@ UI\PE_Bubble.lua
 
 # UI
 PE_ConfigUI.lua
+PE_MinimalUI.lua
 
 # Copporclang specific
 PE_CopporclangAlerts.lua

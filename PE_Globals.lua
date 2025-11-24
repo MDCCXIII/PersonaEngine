@@ -8,6 +8,8 @@ if not PE then
     PE = {}
 end
 
+local DevMode = false
+
 ----------------------------------------------------
 -- Logging Level + core logger
 ----------------------------------------------------
@@ -279,7 +281,7 @@ PE.Words          = PE.Words or {}
 ----------------------------------------------------
 
 PersonaEngineDB                    = PersonaEngineDB or {}
-PersonaEngineDB.DevMode            = PersonaEngineDB.DevMode or false
+PersonaEngineDB.DevMode            = DevMode or PersonaEngineDB.DevMode or false
 PersonaEngineDB.profiles           = PersonaEngineDB.profiles or {}
 PersonaEngineDB.currentProfileKey  = PersonaEngineDB.currentProfileKey or "Copporclang_Default"
 

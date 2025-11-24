@@ -23,61 +23,105 @@ end
 
 local ICON_DB
 
+local function AddTexture(iconList, tex, kindHint)
+    if not tex then return end
+
+    local texture = tex
+    local name
+
+    if type(tex) == "number" then
+        -- FileID, treat the number as the name for searching
+        name = tostring(tex)
+    elseif type(tex) == "string" then
+        -- Strip path + extension -> inv_sword_04
+        local base = tex:match("([^\\/:]+)$") or tex
+        name = base:gsub("%.blp$", ""):gsub("%.tga$", "")
+    else
+        name = tostring(tex)
+    end
+
+    local lower = string.lower(name or "")
+    local kind  = kindHint or "OTHER"
+
+    if lower:find("^inv_") then
+        kind = "ITEM"
+    elseif lower:find("^spell_") then
+        kind = "SPELL"
+    end
+
+    local index = #iconList + 1
+
+    local idStr = ""
+    if type(texture) == "number" then
+        idStr = tostring(texture)
+    end
+
+    -- Search blob: name, index, numeric texture ID
+    local searchBlob = string.lower(table.concat({
+        name or "",
+        tostring(index),
+        idStr,
+    }, " "))
+
+    table.insert(iconList, {
+        index   = index,
+        texture = texture,   -- file path or numeric ID
+        name    = name,
+        lower   = lower,
+        kind    = kind,
+        search  = searchBlob,
+    })
+end
+
 local function BuildIconDB()
     if ICON_DB then
         return ICON_DB
     end
 
-    -- Load Blizzard macro UI so icon tables exist
-    if MacroFrame_LoadUI then
-        MacroFrame_LoadUI()
+    local icons      = {}
+    local usedModern = false
+
+    ------------------------------------------------
+    -- Modern APIs: GetMacroIcons / GetMacroItemIcons
+    ------------------------------------------------
+
+    if GetMacroIcons then
+        local t = {}
+        GetMacroIcons(t)
+        for _, tex in ipairs(t) do
+            AddTexture(icons, tex, "SPELL")
+        end
+        usedModern = true
     end
 
-    if not GetNumMacroIcons or not GetMacroIconInfo then
-        ICON_DB = {}
-        return ICON_DB
+    if GetMacroItemIcons then
+        local t = {}
+        GetMacroItemIcons(t)
+        for _, tex in ipairs(t) do
+            AddTexture(icons, tex, "ITEM")
+        end
+        usedModern = true
     end
 
-    local numIcons = GetNumMacroIcons()
-    if (not numIcons or numIcons <= 0) and _G.NUM_MACRO_ICONS then
-        numIcons = _G.NUM_MACRO_ICONS
-    end
+    ------------------------------------------------
+    -- Legacy fallback
+    ------------------------------------------------
 
-    if not numIcons or numIcons <= 0 then
-        ICON_DB = {}
-        return ICON_DB
-    end
+    if not usedModern and GetNumMacroIcons and GetMacroIconInfo then
+        if MacroFrame_LoadUI then
+            MacroFrame_LoadUI()
+        end
 
-    local icons = {}
+        local numIcons = GetNumMacroIcons()
+        if (not numIcons or numIcons <= 0) and _G.NUM_MACRO_ICONS then
+            numIcons = _G.NUM_MACRO_ICONS
+        end
 
-    for i = 1, numIcons do
-        local tex = GetMacroIconInfo(i)
-        if tex then
-            local texture = tex
-            local name
-
-            if type(tex) == "number" then
-                name = tostring(tex)
-            else
-                name = tex:match("([^\\]+)$") or tex
+        if numIcons and numIcons > 0 then
+            for i = 1, numIcons do
+                local tex = GetMacroIconInfo(i)
+                AddTexture(icons, tex)
             end
-
-            local lower = string.lower(name)
-
-            local kind = "OTHER"
-            if lower:find("^inv_") then
-                kind = "ITEM"
-            elseif lower:find("^spell_") then
-                kind = "SPELL"
-            end
-
-            table.insert(icons, {
-                index   = i,
-                texture = texture,
-                name    = name,
-                lower   = lower,
-                kind    = kind,
-            })
         end
     end
 
@@ -88,23 +132,24 @@ end
 UI.BuildIconDB = BuildIconDB
 
 ----------------------------------------------------
--- Autocomplete dropdown under an edit box
+-- Autocomplete under an edit box
 ----------------------------------------------------
-
 -- UI.AttachIconAutocomplete(editBox, opts)
--- opts.parent       : frame (default editBox:GetParent())
+-- opts.parent       : frame (default parent)
 -- opts.maxEntries   : number (default 8)
 -- opts.onIconChosen : function(data)
+
 function UI.AttachIconAutocomplete(editBox, opts)
     if not editBox then return nil end
 
     opts = opts or {}
+
     local parent       = opts.parent or editBox:GetParent() or UIParent
     local maxEntries   = opts.maxEntries or 8
     local onIconChosen = opts.onIconChosen
 
     local suggestionFrame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    suggestionFrame:SetPoint("TOPLEFT",  editBox, "BOTTOMLEFT", 0, -2)
+    suggestionFrame:SetPoint("TOPLEFT",  editBox, "BOTTOMLEFT",  0, -2)
     suggestionFrame:SetPoint("TOPRIGHT", editBox, "BOTTOMRIGHT", 0, -2)
     suggestionFrame:SetHeight(1)
     suggestionFrame:SetBackdrop({
@@ -139,10 +184,10 @@ function UI.AttachIconAutocomplete(editBox, opts)
         btn:SetHeight(20)
 
         if index == 1 then
-            btn:SetPoint("TOPLEFT",  suggestionFrame, "TOPLEFT", 4, -4)
+            btn:SetPoint("TOPLEFT",  suggestionFrame, "TOPLEFT",  4, -4)
             btn:SetPoint("TOPRIGHT", suggestionFrame, "TOPRIGHT", -4, -4)
         else
-            btn:SetPoint("TOPLEFT",  suggestionButtons[index - 1], "BOTTOMLEFT", 0, -2)
+            btn:SetPoint("TOPLEFT",  suggestionButtons[index - 1], "BOTTOMLEFT",  0, -2)
             btn:SetPoint("TOPRIGHT", suggestionButtons[index - 1], "BOTTOMRIGHT", 0, -2)
         end
 
@@ -152,7 +197,7 @@ function UI.AttachIconAutocomplete(editBox, opts)
 
         btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         btn.label:SetPoint("LEFT",  btn.icon, "RIGHT", 4, 0)
-        btn.label:SetPoint("RIGHT", btn,       "RIGHT", -4, 0)
+        btn.label:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
         btn.label:SetJustifyH("LEFT")
 
         btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -169,6 +214,7 @@ function UI.AttachIconAutocomplete(editBox, opts)
     local function RefreshSuggestions()
         local text = editBox:GetText() or ""
         text = text:gsub("^%s+", ""):gsub("%s+$", "")
+
         if text == "" then
             suggestionFrame:Hide()
             return
@@ -178,8 +224,9 @@ function UI.AttachIconAutocomplete(editBox, opts)
         wipe(activeSuggestions)
 
         local lower = string.lower(text)
+
         for _, data in ipairs(iconDB) do
-            if data.lower:find(lower, 1, true) then
+            if data.search and data.search:find(lower, 1, true) then
                 table.insert(activeSuggestions, data)
                 if #activeSuggestions >= maxEntries then
                     break
@@ -193,6 +240,7 @@ function UI.AttachIconAutocomplete(editBox, opts)
         end
 
         local totalHeight = 8
+
         for i, data in ipairs(activeSuggestions) do
             local btn = EnsureSuggestionButton(i)
             btn._data = data
@@ -221,12 +269,14 @@ end
 ----------------------------------------------------
 -- Icon picker popup window
 ----------------------------------------------------
-
 -- UI.CreateIconPicker(opts) -> frame
--- opts.parent       : frame
--- opts.id           : string
--- opts.title        : string
--- opts.onIconChosen : function(data)
+-- opts.parent           : frame
+-- opts.id               : string
+-- opts.title            : string
+-- opts.onIconChosen     : function(data)
+-- opts.initialTexture   : number|string
+-- opts.initialName      : string
+
 function UI.CreateIconPicker(opts)
     opts = opts or {}
 
@@ -236,6 +286,7 @@ function UI.CreateIconPicker(opts)
     local onIconChosen = opts.onIconChosen
 
     local f
+
     if UI.CreateWindow then
         f = UI.CreateWindow({
             id     = windowId,
@@ -272,6 +323,18 @@ function UI.CreateIconPicker(opts)
 
     f:Hide()
 
+    f._buttons          = {}
+    f._filter           = "ALL"
+    f._search           = ""
+    f._selectedIconData = nil
+    f._initialTexture   = opts.initialTexture
+    f._initialName      = opts.initialName
+
+    function f:SetInitialSelection(texture, name)
+        self._initialTexture = texture
+        self._initialName    = name
+    end
+
     local filterLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     filterLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -32)
     filterLabel:SetText("Filter:")
@@ -287,20 +350,19 @@ function UI.CreateIconPicker(opts)
     searchEdit:SetAutoFocus(false)
     searchEdit:SetHeight(20)
     searchEdit:SetPoint("LEFT",  searchLabel, "RIGHT", 6, 0)
-    searchEdit:SetPoint("RIGHT", f,          "RIGHT", -16, 0)
+    searchEdit:SetPoint("RIGHT", f, "RIGHT", -16, 0)
 
     local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT",     f, "TOPLEFT",     12, -60)
+    scroll:SetPoint("TOPLEFT",     f, "TOPLEFT", 12, -60)
     scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 50)
 
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(1, 1)
     scroll:SetScrollChild(content)
 
-    f._buttons          = {}
-    f._filter           = "ALL"
-    f._search           = ""
-    f._selectedIconData = nil
+    ------------------------------------------------
+    -- Icon buttons
+    ------------------------------------------------
 
     local function NewIconButton(parentFrame)
         local btn = CreateFrame("Button", nil, parentFrame)
@@ -313,18 +375,13 @@ function UI.CreateIconPicker(opts)
 
         btn:SetScript("OnEnter", function(selfBtn)
             if not GameTooltip or not selfBtn._data then return end
+
             local data = selfBtn._data
             GameTooltip:SetOwner(selfBtn, "ANCHOR_CURSOR")
 
             local header = tostring(data.index or 0)
-            local textureID
             if type(data.texture) == "number" then
-                textureID = data.texture
-            elseif C_Texture and C_Texture.GetFileIDFromPath and type(data.texture) == "string" then
-                textureID = C_Texture.GetFileIDFromPath(data.texture)
-            end
-            if textureID then
-                header = string.format("%d  %d", data.index or 0, textureID)
+                header = string.format("%d (%d)", data.index or 0, data.texture)
             end
 
             GameTooltip:SetText(header, 1, 0.82, 0, true)
@@ -333,7 +390,9 @@ function UI.CreateIconPicker(opts)
         end)
 
         btn:SetScript("OnLeave", function()
-            if GameTooltip then GameTooltip:Hide() end
+            if GameTooltip then
+                GameTooltip:Hide()
+            end
         end)
 
         btn:SetScript("OnClick", function(selfBtn)
@@ -358,6 +417,7 @@ function UI.CreateIconPicker(opts)
         local search = string.lower(f._search or "")
 
         local filtered = {}
+
         for _, data in ipairs(iconDB) do
             local passFilter =
                 (filter == "ALL") or
@@ -365,7 +425,7 @@ function UI.CreateIconPicker(opts)
                 (filter == "SPELL" and data.kind == "SPELL")
 
             if passFilter then
-                if search == "" or data.lower:find(search, 1, true) then
+                if search == "" or (data.search and data.search:find(search, 1, true)) then
                     table.insert(filtered, data)
                 end
             end
@@ -411,6 +471,10 @@ function UI.CreateIconPicker(opts)
 
     f.RefreshIcons = RefreshIconGrid
 
+    ------------------------------------------------
+    -- Filter dropdown
+    ------------------------------------------------
+
     local function FilterDrop_OnClick(selfBtn)
         UIDropDownMenu_SetSelectedValue(filterDrop, selfBtn.value)
         f._filter = selfBtn.value or "ALL"
@@ -441,10 +505,18 @@ function UI.CreateIconPicker(opts)
     UIDropDownMenu_SetSelectedValue(filterDrop, "ALL")
     UIDropDownMenu_SetText(filterDrop, "All Icons")
 
+    ------------------------------------------------
+    -- Search box
+    ------------------------------------------------
+
     searchEdit:SetScript("OnTextChanged", function(selfEdit)
         f._search = selfEdit:GetText() or ""
         RefreshIconGrid()
     end)
+
+    ------------------------------------------------
+    -- Okay / Cancel
+    ------------------------------------------------
 
     local function ApplyIconChoice(data)
         if not data then return end
@@ -465,6 +537,25 @@ function UI.CreateIconPicker(opts)
 
     okBtn:SetScript("OnClick", function()
         local data = f._selectedIconData
+
+        -- If user never clicked, try to keep current icon instead of clearing
+        if not data and f._initialTexture then
+            local tex       = f._initialTexture
+            local nameLower = f._initialName and string.lower(f._initialName) or nil
+            local iconDB    = BuildIconDB()
+
+            for _, d in ipairs(iconDB) do
+                local matches =
+                    (tex and d.texture == tex) or
+                    (nameLower and d.lower == nameLower)
+
+                if matches then
+                    data = d
+                    break
+                end
+            end
+        end
+
         if data then
             ApplyIconChoice(data)
         end
@@ -475,13 +566,20 @@ function UI.CreateIconPicker(opts)
         f:Hide()
     end)
 
+    ------------------------------------------------
+    -- OnShow: reset filters + build
+    ------------------------------------------------
+
     f:SetScript("OnShow", function()
         BuildIconDB()
+
         f._selectedIconData = nil
         f._search           = ""
+
         UIDropDownMenu_SetSelectedValue(filterDrop, "ALL")
         UIDropDownMenu_SetText(filterDrop, "All Icons")
         searchEdit:SetText("")
+
         RefreshIconGrid()
     end)
 

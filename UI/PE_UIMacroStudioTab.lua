@@ -207,24 +207,36 @@ function UI.BuildMacroStudioTab(configFrame, page)
         })
     end
 
-    local iconPicker
-    if UI.CreateIconPicker then
-        iconButton:SetScript("OnClick", function()
-            if not iconPicker then
-                iconPicker = UI.CreateIconPicker({
-                    parent = configFrame,
-                    id     = "IconPicker",
-                    title  = "Choose an Icon:",
-                    onIconChosen = function(data)
-                        configFrame.selectedIconTexture = data.texture or 134400
-                        iconTexture:SetTexture(configFrame.selectedIconTexture)
-                        iconEdit:SetText(data.name or "")
-                    end,
-                })
-            end
-            iconPicker:Show()
-        end)
-    end
+	-- in PE_UIMacroStudioTab.lua
+	local iconPicker
+	if UI.CreateIconPicker then
+		iconButton:SetScript("OnClick", function()
+			if not iconPicker then
+				iconPicker = UI.CreateIconPicker({
+					parent = configFrame,
+					id     = "IconPicker",
+					title  = "Choose an Icon:",
+					onIconChosen = function(data)
+						configFrame.selectedIconTexture = data.texture or 134400
+						iconTexture:SetTexture(configFrame.selectedIconTexture)
+						iconEdit:SetText(data.name or "")
+					end,
+				})
+			end
+
+			if iconPicker.SetInitialSelection then
+				iconPicker:SetInitialSelection(
+					configFrame.selectedIconTexture or 134400,
+					iconEdit:GetText()
+				)
+			end
+
+			iconPicker:Show()
+		end)
+	end
+
+
+
 
     ------------------------------------------------
     -- Trigger + chance + channels

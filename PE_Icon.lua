@@ -199,7 +199,20 @@ function PersonaEngine_Button_OnClick(self, button)
             ReloadUI()
             return
         end
-    end
+    elseif not PersonaEngineDB.DevMode and ctrl then
+		if button == "LeftButton" then
+			-- Placeholder behavior; safe to replace later
+            SendChatMessage("Copporclang peers at the surroundings, gears whirring.", "SAY")
+		elseif button == "RightButton" then
+			if PE and PE.MinimalUI and PE.MinimalUI.Toggle then
+				PE.MinimalUI:Toggle()
+			elseif PE and PE.ToggleMinimalUI then
+				PE.ToggleMinimalUI()
+			end
+			return
+		end
+	
+	end
 
     -- Config / Engine control (Shift+click)
     if shift then
@@ -242,7 +255,7 @@ function PersonaEngine_Button_OnClick(self, button)
             PE.WorldInteractPrimary()
         else
             -- Placeholder behavior; safe to replace later
-            -- SendChatMessage("Copporclang peers at the surroundings, gears whirring.", "SAY")
+            SendChatMessage("Copporclang peers at the surroundings, gears whirring.", "SAY")
         end
         return
     elseif button == "RightButton" then
@@ -251,7 +264,7 @@ function PersonaEngine_Button_OnClick(self, button)
             PE.WorldInteractSecondary()
         else
             -- Placeholder behavior; safe to replace later
-            -- SendChatMessage("Copporclang adjusts some invisible dials in the air.", "SAY")
+            SendChatMessage("Copporclang adjusts some invisible dials in the air.", "SAY")
         end
         return
     end
@@ -290,7 +303,19 @@ function PersonaEngine_Button_OnTooltip(tt)
 
         tt:AddLine("|cffffffffCtrl+Left-click:|r Toggle Lua errors & reload", 0.8, 0.8, 0.8)
         tt:AddLine("|cffffffffCtrl+Right-click:|r Reload UI", 0.8, 0.8, 0.8)
-    end
+    else
+		tt:AddLine(" ")
+        tt:AddLine("|cffffff00[Developer Mode]|r", 1, 0.9, 0)
+
+        local luaOn = (GetCVar("scriptErrors") == "1")
+        local luaText = luaOn and "|cff00ff00Lua errors: ON|r" or "|cffff0000Lua errors: OFF|r"
+        tt:AddLine(luaText)
+
+        tt:AddLine("|cffffffffCtrl+Left-click:|r ...", 0.8, 0.8, 0.8)
+        tt:AddLine("|cffffffffCtrl+Right-click:|r Toggle Minimal UI", 0.8, 0.8, 0.8)
+	
+	end
+	
 
     tt:AddLine(" ")
     tt:AddLine("|cffffd200Warning: Button may emit stray ideas.|r")
