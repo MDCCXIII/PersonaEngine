@@ -39,3 +39,10 @@ PE_CopporclangAlerts.lua
 
 #slash commands
 PE_Slash.lua
+
+
+
+#AR-HUD
+AR\PE_ARCore.lua
+AR\PE_ARScanner.lua
+AR\UI\PE_UIARHUD.lua
