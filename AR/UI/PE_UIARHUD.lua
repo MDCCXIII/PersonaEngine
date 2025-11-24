@@ -1,6 +1,9 @@
 -- ##################################################
 -- AR/UI/PE_UIARHUD.lua
 -- Visual AR HUD renderer (rings, lines, etc.)
+-- Hides Blizzard nameplate visuals while keeping
+-- the underlying frames alive for anchoring.
+-- Shows HUD ONLY for target and mouseover.
 -- ##################################################
 
 local PE = PE
@@ -11,7 +14,10 @@ AR.HUD = AR.HUD or {}
 local HUD = AR.HUD
 
 local frames = {}
-local MAX_FRAMES = 5
+local MAX_FRAMES = 2 -- target + mouseover max
+
+-- Set this to false if you ever want Blizzard nameplates visible again.
+local HIDE_BASE_NAMEPLATES = true
 
 ------------------------------------------------------
 -- Frame factory
@@ -20,14 +26,16 @@ local MAX_FRAMES = 5
 local function CreateARFrame(index)
     local name = "PE_ARHUD_Frame" .. index
     local f = CreateFrame("Frame", name, UIParent)
+    f.peIsARHUD = true -- mark so we don't hide ourselves
     f:SetSize(140, 40)
     f:Hide()
 
     -- Simple “ring” texture approximating a cyber overlay.
+    -- You can later swap this to a custom texture in Media/.
     local ring = f:CreateTexture(nil, "ARTWORK")
     ring:SetAllPoints()
-    ring:SetTexture("Interface\\BUTTONS\\UI-Quickslot") -- placeholder ring
-    ring:SetAlpha(0.35)
+    ring:SetTexture("Interface\\BUTTONS\\UI-Quickslot")
+    ring:SetAlpha(0.4)
     f.ring = ring
 
     -- Header above the ring (name)
@@ -37,25 +45,64 @@ local function CreateARFrame(index)
     header:SetText("")
     f.header = header
 
-    -- Subline below (compact info) – visible in both modes
+    -- Subline below (level / type)
     local sub = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     sub:SetPoint("TOP", f, "BOTTOM", 0, -2)
     sub:SetJustifyH("CENTER")
     sub:SetText("")
     f.sub = sub
 
-    -- Extra detail line (only in expanded mode, mostly for your target)
-    local detail = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    detail:SetPoint("TOP", sub, "BOTTOM", 0, -2)
-    detail:SetJustifyH("CENTER")
-    detail:SetText("")
-    f.detail = detail
-
     return f
 end
 
 ------------------------------------------------------
--- Helpers
+-- Nameplate hiding helpers
+------------------------------------------------------
+
+local function HideBasePlateVisuals(plate)
+    if not HIDE_BASE_NAMEPLATES or not plate then
+        return
+    end
+
+    -- Try the default UnitFrame first (Dragonflight/Retail)
+    local uf = plate.UnitFrame or plate.unitFrame
+    if uf and uf.SetAlpha then
+        uf:SetAlpha(0)
+    end
+
+    -- Hide any direct regions on the plate that aren't AR HUD bits
+    local regions = { plate:GetRegions() }
+    for _, region in ipairs(regions) do
+        if region and not region.peIsARHUD and region.SetAlpha then
+            region:SetAlpha(0)
+        end
+    end
+
+    -- Hide direct child frames that aren't AR HUD frames
+    local numChildren = plate:GetNumChildren()
+    for i = 1, numChildren do
+        local child = select(i, plate:GetChildren())
+        if child and not child.peIsARHUD and child.SetAlpha then
+            child:SetAlpha(0)
+        end
+    end
+end
+
+local function ApplyHideAllBaseNameplates()
+    if not HIDE_BASE_NAMEPLATES or not C_NamePlate or not C_NamePlate.GetNamePlates then
+        return
+    end
+
+    local plates = C_NamePlate.GetNamePlates()
+    if not plates then return end
+
+    for _, plate in ipairs(plates) do
+        HideBasePlateVisuals(plate)
+    end
+end
+
+------------------------------------------------------
+-- Small helpers for AR look
 ------------------------------------------------------
 
 local function GetBaseColor(data, isPrimary)
@@ -71,54 +118,22 @@ local function GetBaseColor(data, isPrimary)
     end
 
     if isPrimary then
-        -- Slight boost for the main target
         g = math.min(1, g + 0.2)
         b = math.min(1, b + 0.2)
-    end
-
-    if data.isBoss then
-        r, g, b = 1.0, 0.4, 1.0
-    elseif data.isElite then
-        r, g, b = 1.0, 0.6, 0.3
-    end
-
-    if data.isCastingInterruptible then
-        -- Interruptible cast: go “warning” yellow
-        r, g, b = 1.0, 1.0, 0.2
     end
 
     return r, g, b
 end
 
 local function BuildCompactLine(data)
-    -- Quick descriptor for compact mode
-    if data.isPlayer then
-        local level = data.level or "??"
-        local faction = data.faction or ""
-        return string.format("Lv%s %s", level, faction)
-    end
-
     local level = data.level or "??"
+
+    if data.isPlayer then
+        return string.format("Lv%s Player", level)
+    end
+
     local creature = data.creature or ""
-    if data.isBoss then
-        return string.format("Boss • Lv%s %s", level, creature)
-    elseif data.isElite then
-        return string.format("Elite • Lv%s %s", level, creature)
-    else
-        return string.format("Lv%s %s", level, creature)
-    end
-end
-
-local function GetDetailLines(data)
-    local tooltip = data.tooltip
-    if not tooltip then
-        return nil, nil
-    end
-
-    local line1 = tooltip.subHeader or tooltip.lines[1]
-    local line2 = tooltip.lines and tooltip.lines[2] or nil
-
-    return line1, line2
+    return string.format("Lv%s %s", level, creature)
 end
 
 ------------------------------------------------------
@@ -126,18 +141,28 @@ end
 ------------------------------------------------------
 
 function HUD.Init()
-    -- Create a small pool of frames that can be anchored to nameplates
+    -- Create frames for target + mouseover
     for i = 1, MAX_FRAMES do
         frames[i] = CreateARFrame(i)
     end
 
+    -- Ensure any existing plates are stripped when we log in / reload
+    ApplyHideAllBaseNameplates()
+
+    -- Event-driven updates
     AR.RegisterEvent("PLAYER_TARGET_CHANGED")
+    AR.RegisterEvent("UPDATE_MOUSEOVER_UNIT")
     AR.RegisterEvent("NAME_PLATE_UNIT_ADDED")
     AR.RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 end
 
 function HUD.OnEvent(event, ...)
-    -- For now just trigger a refresh
+    if event == "NAME_PLATE_UNIT_ADDED" then
+        local unit = ...
+        local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(unit)
+        HideBasePlateVisuals(plate)
+    end
+
     HUD.Refresh(event, ...)
 end
 
@@ -163,58 +188,49 @@ function HUD.Refresh(reason)
         return
     end
 
-    local expanded = AR.IsExpanded()
+    -- Pick out just target and mouseover entries.
+    local targetEntry, mouseEntry
 
-    -- Simple rule for now:
-    --  * snapshot[1] is the primary (usually your target)
-    --  * Up to MAX_FRAMES entries shown
-    for i, entry in ipairs(snapshot) do
-        if i > MAX_FRAMES then break end
-
-        local f = frames[i]
+    for _, entry in ipairs(snapshot) do
         local data = entry.data
-        local isPrimary = (i == 1)
-
-        local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(entry.unit)
-        if plate and data then
-            f:SetParent(plate)
-            f:SetAllPoints(plate)
-            f:Show()
-
-            -- Color the ring
-            local r, g, b = GetBaseColor(data, isPrimary)
-            f.ring:SetVertexColor(r, g, b, 0.8)
-
-            -- Text: header is always just tooltip header or name
-            local tooltip = data.tooltip
-            local headerText = (tooltip and tooltip.header) or data.name or "Unknown Target"
-            f.header:SetText(headerText)
-
-            -- Sub line: compact descriptor
-            f.sub:SetText(BuildCompactLine(data) or "")
-
-            -- Detail line(s) only in expanded view,
-            -- and primarily for your main target so it doesn’t get too noisy.
-            if expanded and isPrimary then
-                local d1, d2 = GetDetailLines(data)
-                if d1 and d2 then
-                    f.detail:SetText(d1 .. " |cFF808080•|r " .. d2)
-                elseif d1 then
-                    f.detail:SetText(d1)
-                else
-                    f.detail:SetText("")
-                end
-            else
-                f.detail:SetText("")
+        if data then
+            if data.isTarget and not targetEntry then
+                targetEntry = entry
+            elseif data.isMouseover and not mouseEntry and not data.isTarget then
+                -- avoid double-using same unit if mouseover == target
+                mouseEntry = entry
             end
-        else
-            f:Hide()
         end
     end
 
-    -- Hide any unused frames
-    local count = math.min(#snapshot, MAX_FRAMES)
-    for i = count + 1, MAX_FRAMES do
-        frames[i]:Hide()
+    local ordered = {}
+    if targetEntry then table.insert(ordered, targetEntry) end
+    if mouseEntry then table.insert(ordered, mouseEntry) end
+
+    -- Draw them: frame1 = target, frame2 = mouseover
+    for i = 1, MAX_FRAMES do
+        local f = frames[i]
+        local entry = ordered[i]
+        if f and entry then
+            local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(entry.unit)
+            local data  = entry.data
+            if plate and data then
+                HideBasePlateVisuals(plate)
+
+                f:SetParent(plate)
+                f:SetAllPoints(plate)
+                f:Show()
+
+                local r, g, b = GetBaseColor(data, i == 1)
+                f.ring:SetVertexColor(r, g, b, 0.9)
+
+                f.header:SetText(data.name or "Unknown Target")
+                f.sub:SetText(BuildCompactLine(data) or "")
+            else
+                f:Hide()
+            end
+        elseif f then
+            f:Hide()
+        end
     end
 end

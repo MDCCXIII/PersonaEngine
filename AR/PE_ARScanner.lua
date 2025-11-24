@@ -104,6 +104,7 @@ end
 function Scanner.Init()
     -- Register events through the core so we don’t create extra frames
     AR.RegisterEvent("PLAYER_TARGET_CHANGED")
+    AR.RegisterEvent("UPDATE_MOUSEOVER_UNIT")
     AR.RegisterEvent("NAME_PLATE_UNIT_ADDED")
     AR.RegisterEvent("NAME_PLATE_UNIT_REMOVED")
     AR.RegisterEvent("MODIFIER_STATE_CHANGED")
@@ -119,6 +120,11 @@ end
 function Scanner.OnEvent(event, ...)
     if event == "PLAYER_TARGET_CHANGED" then
         Scanner:UpdateUnit("target")
+
+    elseif event == "UPDATE_MOUSEOVER_UNIT" then
+        if UnitExists("mouseover") then
+            Scanner:UpdateUnit("mouseover")
+        end
 
     elseif event == "NAME_PLATE_UNIT_ADDED" then
         local unit = ...
@@ -186,6 +192,9 @@ function Scanner:UpdateUnit(unitID)
     data.faction    = UnitFactionGroup(unitID)
     data.isPet      = UnitIsUnit(unitID, "pet") or UnitIsOtherPlayersPet(unitID) or false
 
+    data.isTarget    = UnitIsUnit(unitID, "target") or false
+    data.isMouseover = UnitIsUnit(unitID, "mouseover") or false
+
     -- Boss / elite flags
     data.isBoss  = (data.classif == "worldboss")
     data.isElite = (data.classif == "elite" or data.classif == "rareelite")
@@ -225,7 +234,13 @@ function Scanner.BuildSnapshot()
         else
             local score = 0
 
-            if data.unit == "target" then score = score + 100 end
+            -- hard priority: target > mouseover > others
+            if data.isTarget then
+                score = score + 300
+            elseif data.isMouseover then
+                score = score + 200
+            end
+
             if data.hostile then score = score + 30 end
             if data.isBoss then score = score + 40 end
             if data.isElite then score = score + 15 end
