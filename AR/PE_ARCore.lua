@@ -18,8 +18,10 @@ local AR = PE.AR
 ------------------------------------------------------
 -- State
 ------------------------------------------------------
-AR.enabled = true   -- runtime toggle
+
+AR.enabled     = true   -- runtime toggle
 AR.initialized = false
+AR.expanded    = false  -- compact vs expanded HUD
 
 ------------------------------------------------------
 -- Local helpers
@@ -41,11 +43,16 @@ end
 
 function AR.SetEnabled(flag)
     AR.enabled = not not flag
+
     if AR.enabled and AR.initialized and AR.HUD and AR.HUD.Refresh then
         AR.HUD.Refresh("ENABLE_TOGGLE")
     elseif not AR.enabled and AR.HUD and AR.HUD.HideAll then
         AR.HUD.HideAll()
     end
+end
+
+function AR.IsExpanded()
+    return AR.expanded and AR.enabled and AR.initialized
 end
 
 -- For other systems to query a “snapshot” of what AR sees
@@ -67,26 +74,28 @@ local function OnEvent(self, event, ...)
 
     if event == "PLAYER_LOGIN" then
         -- Initialize scanner + HUD lazily
-        SafeCall(AR.Scanner.Init)
-        SafeCall(AR.HUD.Init)
+        SafeCall(AR.Scanner and AR.Scanner.Init)
+        SafeCall(AR.HUD     and AR.HUD.Init)
         AR.initialized = true
     end
 
     -- Pass other events down to scanner/HUD as they care
-    SafeCall(AR.Scanner.OnEvent, event, ...)
-    SafeCall(AR.HUD.OnEvent, event, ...)
+    SafeCall(AR.Scanner and AR.Scanner.OnEvent, event, ...)
+    SafeCall(AR.HUD     and AR.HUD.OnEvent, event, ...)
 end
 
 local function CreateEventFrame()
     if frame then return end
-    frame = CreateFrame("Frame")
+
+    frame = CreateFrame("Frame", "PE_ARCoreFrame", UIParent)
     frame:SetScript("OnEvent", OnEvent)
-    frame:RegisterEvent("PLAYER_LOGIN")
-    -- Scanner/HUD can ask ARCore to register more via helper
+    frame:RegisterEvent("PLAYER_LOGIN") -- Scanner/HUD can ask ARCore to register more via helper
 end
 
 function AR.RegisterEvent(evt)
-    if not frame then CreateEventFrame() end
+    if not frame then
+        CreateEventFrame()
+    end
     frame:RegisterEvent(evt)
 end
 

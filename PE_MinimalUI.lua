@@ -33,12 +33,12 @@ end
 -- ALLOW LIST (these survive tactical mode)
 ------------------------------------------------------
 local ALLOWED = {
-    MinimapCluster     = true,
-    PlayerFrame        = true,
-    PetFrame           = true,
-    TargetFrame        = true,
-    TargetFrameToT     = true,
-    FocusFrame         = true,
+    MinimapCluster      = true,
+    PlayerFrame         = true,
+    PetFrame            = true,
+    TargetFrame         = true,
+    TargetFrameToT      = true,
+    FocusFrame          = true,
     PersonaEngineButton = true,
 }
 
@@ -193,23 +193,37 @@ AddList(MISC_HUD_FRAMES)
 AddList(ADDON_ACTION_BARS)
 
 ------------------------------------------------------
--- Internal helpers
+-- Internal helpers – SAFE "alpha hide"
 ------------------------------------------------------
-local function SafeHide(frame)
-    if frame and frame.Hide then
-        frame:Hide()
+
+-- Store original alpha per-frame so we can restore it
+local originalAlpha = setmetatable({}, { __mode = "k" })
+
+local function AlphaHide(frame)
+    if not frame or not frame.GetAlpha or not frame.SetAlpha then
+        return
     end
+
+    if originalAlpha[frame] == nil then
+        originalAlpha[frame] = frame:GetAlpha() or 1
+    end
+
+    frame:SetAlpha(0)
 end
 
-local function SafeShow(frame)
-    if frame and frame.Show then
-        frame:Show()
+local function AlphaShow(frame)
+    if not frame or not frame.GetAlpha or not frame.SetAlpha then
+        return
+    end
+
+    local a = originalAlpha[frame]
+    if a ~= nil then
+        frame:SetAlpha(a)
+        originalAlpha[frame] = nil
+    else
+        frame:SetAlpha(1)
     end
 end
-
--- Remember original shown/hidden state so we don't
--- resurrect things Blizzard had hidden.
-local originalVisibility = setmetatable({}, { __mode = "k" })
 
 -- Broad patterns to catch bar/pet/micro/button junk
 local BAR_NAME_PATTERNS = {
@@ -244,20 +258,9 @@ end
 local function MarkFrame(frame, hidden)
     if not frame then return end
     if hidden then
-        if originalVisibility[frame] == nil and frame.IsShown then
-            originalVisibility[frame] = frame:IsShown()
-        end
-        SafeHide(frame)
+        AlphaHide(frame)
     else
-        local wasShown = originalVisibility[frame]
-        if wasShown ~= nil then
-            if wasShown then
-                SafeShow(frame)
-            else
-                SafeHide(frame)
-            end
-            originalVisibility[frame] = nil
-        end
+        AlphaShow(frame)
     end
 end
 
@@ -277,11 +280,16 @@ local function ApplyHiddenState(hidden)
     end
 
     -- 2) Sweep all top-level UIParent children:
-    --    anything NOT in the allow list also gets hidden.
+    --    anything NOT in the allow list also gets alpha-hidden.
     local children = { UIParent:GetChildren() }
     for _, frame in ipairs(children) do
         if not IsAllowedFrame(frame) then
             MarkFrame(frame, hidden)
+        else
+            -- ensure allowed frames keep / regain their original alpha
+            if not hidden then
+                AlphaShow(frame)
+            end
         end
     end
 end
