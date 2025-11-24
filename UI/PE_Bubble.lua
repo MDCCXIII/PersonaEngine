@@ -23,14 +23,14 @@ local BUBBLE_TEXTURE_PATH = "Interface\\AddOns\\PersonaEngine\\Media\\PE_SpeechB
 
 local DEFAULTS = {
     enabled        = true,
-    maxWidth       = 260,  -- pixel width cap (clamped below)
-    padding        = 12,   -- base padding (horizontal)
+    maxWidth       = 220,  -- pixel width cap (clamped below)
+    padding        = 2,   -- base padding (horizontal)
     -- Position relative to PlayerFrame's BOTTOMRIGHT
     offsetX        = -40,  -- negative = bubble left of portrait
     offsetY        = 40,
     bgColor        = { 1, 1, 1, 0.85 },  -- white w/ alpha
     textColor      = { 0, 0, 0, 1.0 },   -- black
-    wrapChars      = 50,                 -- char limit per line for wrapping
+    wrapChars      = 40,                 -- char limit per line for wrapping
     displaySeconds = 2.3,                -- base time; extra added per characters
 }
 
@@ -41,7 +41,7 @@ local isConfigMode = false
 
 -- Multi-line state
 local lines      = {}   -- { { text = "...", expireAt = number }, ... }
-local maxLines   = 5    -- max visible lines in the bubble
+local maxLines   = 3    -- max visible lines in the bubble
 local updateTick = 0
 
 ----------------------------------------------------
@@ -75,11 +75,11 @@ local function GetSettings()
     -- Simple scalar defaults
     if s.enabled == nil then s.enabled = DEFAULTS.enabled end
 
-    if not s.maxWidth then s.maxWidth = DEFAULTS.maxWidth end
-    -- Clamp maxWidth so bad saved values can't create screen-wide marshmallows
-    if s.maxWidth < 180 or s.maxWidth > 420 then
-        s.maxWidth = DEFAULTS.maxWidth
-    end
+	-- Always use code default for now so tuning is easy
+    s.maxWidth = DEFAULTS.maxWidth              -- << force from code
+    -- (Optional tiny sanity clamp so a typo doesn't break everything)
+    if s.maxWidth < 80 then s.maxWidth = 80 end
+    if s.maxWidth > 600 then s.maxWidth = 600 end
 
     if not s.padding then s.padding = DEFAULTS.padding end
     if s.offsetX == nil then s.offsetX = DEFAULTS.offsetX end
@@ -185,13 +185,35 @@ function ResizeToText()
 
     -- Must match the padX/padY logic in CreateBubbleFrame
     -- *** DO NOT TOUCH THESE LINES (per user request) ***
-    local padX = (settings.padding or 12) + 50
-    local padY = (settings.padding + 12) + 20 -- must match CreateBubbleFrame
+    local padX = (settings.padding or 12) + 5
+    local padY = (settings.padding + 12) + 25 -- must match CreateBubbleFrame
 
-    frame:SetWidth(settings.maxWidth)
-    textFS:SetWidth(settings.maxWidth - padX * 2)
+    ------------------------------------------------
+    -- WIDTH: grow/shrink around the text
+    ------------------------------------------------
+    -- First, let the fontstring render at "full" width so we can measure it
+    textFS:SetWidth(1000)  -- large temp width just for measurement
+    local textWidth = textFS:GetStringWidth() or 0
 
-    local h = textFS:GetStringHeight()
+    -- Desired width is text width plus left/right padding
+    local desiredWidth = textWidth + padX * 2
+
+    -- Clamp to a sensible range
+    local minWidth = 140                -- tweak to taste
+    local maxWidth = settings.maxWidth  -- from your DEFAULTS / settings
+    if desiredWidth < minWidth then
+        desiredWidth = minWidth
+    elseif desiredWidth > maxWidth then
+        desiredWidth = maxWidth
+    end
+
+    frame:SetWidth(desiredWidth)
+    textFS:SetWidth(desiredWidth - padX * 2)
+
+    ------------------------------------------------
+    -- HEIGHT: based on word-wrapped text
+    ------------------------------------------------
+    local h = textFS:GetStringHeight() or 0
 
     -- Count logical lines to give extra breathing room
     local text      = textFS:GetText() or ""
@@ -204,8 +226,9 @@ function ResizeToText()
     local extraY        = math.max(0, lineCount - 1) * extraYPerLine
 
     -- Add vertical margin so text never hugs the top/bottom edges
-    frame:SetHeight(h + padY * 2 + extraY)
+    frame:SetHeight(h + padY * 2) --+ extraY)
 end
+
 
 ----------------------------------------------------
 -- Frame creation / rebuild
@@ -312,18 +335,35 @@ local function CreateBubbleFrame()
     -- down inside the oval, not on the very top edge
     ------------------------------------------------
     -- *** DO NOT TOUCH THESE LINES (per user request) ***
+    local padX = (settings.padding or 12) + 5
+    local padY = (settings.padding + 12) + 15   -- << tweak this if you want more/less headroom
+	
+	------------------------------------------------
+    -- TEXT: center inside bubble with thinner
+    -- margins but safe scaling
+    ------------------------------------------------
+    -- *** DO NOT TOUCH THESE LINES (per user request) ***
     local padX = (settings.padding or 12) + 50
     local padY = (settings.padding + 12) + 15   -- << tweak this if you want more/less headroom
 
+    -- Make sure the fontstring exists *before* we use it
     if not textFS then
         textFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     end
-    textFS:SetJustifyH("LEFT")
-    textFS:SetJustifyV("TOP")
-    textFS:SetWordWrap(true)
+
+    -- Derive "inner" padding from padX/padY so margins stay proportional
+    local innerPadX = math.max(10, padX - 15)  -- thinner left/right margin
+    local innerPadY = math.max(5, padY - 4)  -- thinner top margin
+
     textFS:ClearAllPoints()
-    textFS:SetPoint("TOPLEFT",  frame, "TOPLEFT",  padX, -padY)
-    textFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -padX, -padY)
+    textFS:SetJustifyH("CENTER")   -- center text horizontally
+    textFS:SetJustifyV("TOP")      -- anchor at top of text box
+    textFS:SetWordWrap(true)
+    textFS:SetSpacing(2)           -- extra breathing room between lines
+
+    textFS:SetPoint("TOPLEFT",  frame, "TOPLEFT",  innerPadX, -innerPadY)
+    textFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -innerPadX, -innerPadY)
+
 
     -- Dragging (config mode only)
     frame:RegisterForDrag("LeftButton")
