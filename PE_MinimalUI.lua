@@ -203,11 +203,9 @@ local function AlphaHide(frame)
     if not frame or not frame.GetAlpha or not frame.SetAlpha then
         return
     end
-
     if originalAlpha[frame] == nil then
         originalAlpha[frame] = frame:GetAlpha() or 1
     end
-
     frame:SetAlpha(0)
 end
 
@@ -215,7 +213,6 @@ local function AlphaShow(frame)
     if not frame or not frame.GetAlpha or not frame.SetAlpha then
         return
     end
-
     local a = originalAlpha[frame]
     if a ~= nil then
         frame:SetAlpha(a)
@@ -286,12 +283,43 @@ local function ApplyHiddenState(hidden)
         if not IsAllowedFrame(frame) then
             MarkFrame(frame, hidden)
         else
-            -- ensure allowed frames keep / regain their original alpha
             if not hidden then
+                -- ensure allowed frames regain original alpha
                 AlphaShow(frame)
             end
         end
     end
+end
+
+------------------------------------------------------
+-- Event frame to re-apply tactical mode on state changes
+------------------------------------------------------
+MinimalUI.eventFrame = MinimalUI.eventFrame or CreateFrame("Frame")
+
+MinimalUI.eventFrame:SetScript("OnEvent", function(_, event, ...)
+    -- Only do work while tactical mode is active
+    if MinimalUI.hidden then
+        ApplyHiddenState(true)
+    end
+end)
+
+local function EnableTacticalEvents()
+    local f = MinimalUI.eventFrame
+    -- things that tend to spawn bars / pet bars / vehicles
+    f:RegisterEvent("PLAYER_ENTERING_WORLD")
+    f:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+    f:RegisterEvent("UNIT_ENTERED_VEHICLE")
+    f:RegisterEvent("UNIT_EXITED_VEHICLE")
+    f:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+    f:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
+    f:RegisterEvent("PET_BAR_UPDATE")
+    f:RegisterEvent("PET_BAR_SHOWGRID")
+    f:RegisterEvent("PET_BAR_HIDEGRID")
+end
+
+local function DisableTacticalEvents()
+    local f = MinimalUI.eventFrame
+    f:UnregisterAllEvents()
 end
 
 ------------------------------------------------------
@@ -318,8 +346,10 @@ function MinimalUI:Toggle()
     ApplyHiddenState(self.hidden)
 
     if self.hidden then
+        EnableTacticalEvents()
         print("|cff88ff88[PersonaEngine] Tactical HUD enabled (minimal UI).|r")
     else
+        DisableTacticalEvents()
         print("|cffffcc00[PersonaEngine] Full HUD restored.|r")
     end
 end
