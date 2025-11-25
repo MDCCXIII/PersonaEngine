@@ -133,17 +133,14 @@ function HUD.Refresh(reason)
     -- Pick out just target and mouseover entries.
     local targetEntry, mouseEntry
 
-    for _, entry in ipairs(snapshot) do
-        local data = entry.data
-        if data then
-            if data.isTarget and not targetEntry then
-                targetEntry = entry
-            elseif data.isMouseover and not mouseEntry and not data.isTarget then
-                -- avoid double-using same unit if mouseover == target
-                mouseEntry = entry
-            end
-        end
-    end
+	for _, entry in ipairs(snapshot) do
+		if entry.isTarget and not targetEntry then
+			targetEntry = entry
+		elseif entry.isMouseover and not mouseEntry and not entry.isTarget then
+			mouseEntry = entry
+		end
+	end
+
 
     local ordered = {}
     if targetEntry then table.insert(ordered, targetEntry) end

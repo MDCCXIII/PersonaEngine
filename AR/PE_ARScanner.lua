@@ -309,15 +309,13 @@ function Scanner.BuildSnapshot()
     end
 
     for guid, data in pairs(Scanner.units) do
-        -- Re-evaluate target/mouseover flags using *current* unit tokens
         local unit = data.unit
+
+        -- Fresh, per-snapshot flags – do NOT trust old data.isTarget/isMouseover
         local isTargetNow    = unit and UnitIsUnit(unit, "target")
         local isMouseoverNow = unit and UnitIsUnit(unit, "mouseover")
 
-        data.isTarget    = isTargetNow
-        data.isMouseover = isMouseoverNow
-
-        -- Expire old entries, BUT never expire current target/mouseover on age alone
+        -- Age-out, but never drop the *current* target/mouseover on age alone
         local tooOld = data.lastSeen and ((now - data.lastSeen) > 30)
         if tooOld and not isTargetNow and not isMouseoverNow then
             Scanner.units[guid] = nil
@@ -339,10 +337,12 @@ function Scanner.BuildSnapshot()
             end
 
             table.insert(snapshot, {
-                guid  = guid,
-                unit  = unit,
-                score = score,
-                data  = data,
+                guid       = guid,
+                unit       = unit,
+                data       = data,
+                isTarget   = isTargetNow,
+                isMouseover= isMouseoverNow,
+                score      = score,
             })
         end
     end
@@ -353,6 +353,7 @@ function Scanner.BuildSnapshot()
 
     return snapshot
 end
+
 
 
 PE.LogInit(MODULE)
