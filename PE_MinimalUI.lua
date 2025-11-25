@@ -218,47 +218,48 @@ AddList(ADDON_ACTION_BARS)
 local originalAlpha = setmetatable({}, { __mode = "k" })
 
 local function AlphaHide(frame)
-    if not frame or not frame.GetAlpha or not frame.SetAlpha then
+    if not frame or type(frame) ~= "table" then
         return
     end
-    if originalAlpha[frame] == nil then
-        originalAlpha[frame] = frame:GetAlpha() or 1
+    if type(frame.GetAlpha) ~= "function" or type(frame.SetAlpha) ~= "function" then
+        -- Not a normal frame, or doesn't support alpha; skip it
+        return
     end
-    frame:SetAlpha(0)
+
+    -- Safely read current alpha
+    if originalAlpha[frame] == nil then
+        local ok, a = pcall(frame.GetAlpha, frame)
+        if ok then
+            originalAlpha[frame] = a or 1
+        else
+            -- Frame freaked out when asked its alpha; don't touch it
+            return
+        end
+    end
+
+    -- Safely set alpha to 0
+    pcall(frame.SetAlpha, frame, 0)
 end
 
 local function AlphaShow(frame)
-    if not frame or not frame.GetAlpha or not frame.SetAlpha then
+    if not frame or type(frame) ~= "table" then
         return
     end
+    if type(frame.SetAlpha) ~= "function" then
+        return
+    end
+
     local a = originalAlpha[frame]
     if a ~= nil then
-        frame:SetAlpha(a)
+        -- Safely restore alpha
+        pcall(frame.SetAlpha, frame, a)
         originalAlpha[frame] = nil
     else
-        frame:SetAlpha(1)
+        -- No stored alpha, just make sure it's visible again
+        pcall(frame.SetAlpha, frame, 1)
     end
 end
 
--- Broad patterns to catch bar/pet/micro/button junk
-local BAR_NAME_PATTERNS = {
-    "^BT4",              -- any Bartender frame or button
-    "ActionBar",         -- Blizzard action bar bits (containers)
-    "ActionButton",      -- individual action buttons (incl. bar 6)
-    "MultiBar",          -- multibar containers/buttons
-
-    "MicroMenu",         -- micro menu containers
-    "MicroButton",       -- individual micro buttons
-
-    "BagBar",            -- bag bar containers
-    "BagSlot",           -- individual bag slots
-    "BackpackButton",    -- any backpack button variants
-    "ReagentBag",        -- reagent bag slot/buttons
-
-    "Bar6",              -- anything explicitly tied to "bar 6"
-    "PetBar",            -- pet bar containers
-    "PetActionButton",   -- pet action buttons
-}
 
 local function ShouldPatternHide(name)
     if not name then return false end
