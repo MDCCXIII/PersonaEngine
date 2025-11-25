@@ -337,11 +337,7 @@ function Skin.HideAll()
     end
 end
 
--- Register as a PE module (safe-guarded)
-if PE.LogInit then
-    PE.LogInit(MODULE)
-end
-
+PE.LogInit(MODULE)
 if PE.RegisterModule then
     PE.RegisterModule("AR HUD Skin", {
         name  = "AR HUD Skin",

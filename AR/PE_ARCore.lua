@@ -1,9 +1,10 @@
+local MODULE = "AR Core"
 -- ##################################################
 -- AR/PE_ARCore.lua
 -- PersonaEngine: Augmented Reality HUD core
 -- Standalone-friendly, optional feature module.
 -- ##################################################
-local MODULE = "AR Core"
+
 local PE = _G.PE
 if not PE or type(PE) ~= "table" then
     -- Allow clean removal / standalone experiments.

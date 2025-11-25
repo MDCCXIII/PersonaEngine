@@ -1,3 +1,4 @@
+local MODULE = "AR HUD"
 -- ##################################################
 -- AR/UI/PE_UIARHUD.lua
 -- AR HUD logic: decides *who* gets a HUD and *when*.
@@ -163,4 +164,13 @@ function HUD.Refresh(reason)
             Skin.Hide(frame)
         end
     end
+end
+
+
+PE.LogInit(MODULE)
+if PE.RegisterModule then
+    PE.RegisterModule("AR HUD Skin", {
+        name  = "AR HUD Skin",
+        class = "AR HUD",
+    })
 end
