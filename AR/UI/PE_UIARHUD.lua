@@ -3,19 +3,28 @@
 -- AR HUD logic: decides *who* gets a HUD and *when*.
 -- All visuals delegated to AR.HUDSkin.
 -- ##################################################
-local MODULE = "AR HUD"
+
 local PE = _G.PE
-local AR = PE and PE.AR
-if not AR then return end
+if not PE then return end
+
+PE.AR = PE.AR or {}
+local AR = PE.AR
 
 AR.HUD = AR.HUD or {}
 local HUD = AR.HUD
 
-local Skin = AR.HUDSkin -- may be nil if skin file not loaded
 local MAX_FRAMES = 2    -- target + mouseover max
 
 -- Set this to false if you ever want Blizzard nameplates visible again.
 local HIDE_BASE_NAMEPLATES = true
+
+------------------------------------------------------
+-- Helper: always fetch the current skin table
+------------------------------------------------------
+
+local function GetSkin()
+    return AR.HUDSkin
+end
 
 ------------------------------------------------------
 -- Nameplate hiding helpers
@@ -26,13 +35,11 @@ local function HideBasePlateVisuals(plate)
         return
     end
 
-    -- Try the default UnitFrame first (Dragonflight/Retail)
     local uf = plate.UnitFrame or plate.unitFrame
     if uf and uf.SetAlpha then
         uf:SetAlpha(0)
     end
 
-    -- Hide any direct regions on the plate that aren't AR HUD bits
     local regions = { plate:GetRegions() }
     for _, region in ipairs(regions) do
         if region and not region.peIsARHUD and region.SetAlpha then
@@ -40,7 +47,6 @@ local function HideBasePlateVisuals(plate)
         end
     end
 
-    -- Hide direct child frames that aren't AR HUD frames
     local numChildren = plate:GetNumChildren()
     for i = 1, numChildren do
         local child = select(i, plate:GetChildren())
@@ -68,7 +74,6 @@ end
 ------------------------------------------------------
 
 function HUD.Init()
-    -- Nothing to create here; frames come from HUDSkin
     ApplyHideAllBaseNameplates()
 
     -- Event-driven updates
@@ -89,6 +94,7 @@ function HUD.OnEvent(event, ...)
 end
 
 function HUD.HideAll()
+    local Skin = GetSkin()
     if Skin and Skin.HideAll then
         Skin.HideAll()
     end
@@ -99,12 +105,13 @@ end
 ------------------------------------------------------
 
 function HUD.Refresh(reason)
-    if not AR.IsEnabled() or not Skin or not Skin.GetFrame then
+    local Skin = GetSkin()
+    if not AR.IsEnabled or not AR.IsEnabled() or not Skin or not Skin.GetFrame then
         HUD.HideAll()
         return
     end
 
-    local snapshot = AR.GetCurrentSnapshot()
+    local snapshot = AR.GetCurrentSnapshot and AR.GetCurrentSnapshot()
     if not snapshot or #snapshot == 0 then
         HUD.HideAll()
         return
@@ -121,7 +128,6 @@ function HUD.Refresh(reason)
             if data.isTarget and not targetEntry then
                 targetEntry = entry
             elseif data.isMouseover and not mouseEntry and not data.isTarget then
-                -- avoid double-using same unit if mouseover == target
                 mouseEntry = entry
             end
         end
@@ -134,7 +140,7 @@ function HUD.Refresh(reason)
     -- frame1 = target, frame2 = mouseover
     for i = 1, MAX_FRAMES do
         local entry = ordered[i]
-        local frame = Skin.GetFrame(i)
+        local frame = Skin.GetFrame and Skin.GetFrame(i)
 
         if entry and frame then
             local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(entry.unit)
@@ -151,20 +157,10 @@ function HUD.Refresh(reason)
 
                 Skin.Apply(frame, plate, entry, ctx)
             else
-                Skin.Hide(frame)
+                if Skin.Hide then Skin.Hide(frame) end
             end
-        elseif frame then
+        elseif frame and Skin.Hide then
             Skin.Hide(frame)
         end
     end
 end
-
-----------------------------------------------------
--- Module registration
-----------------------------------------------------
-
-PE.LogInit(MODULE)
-PE.RegisterModule("AR HUD", {
-    name  = "AR HUD",
-    class = "AR HUD",
-})
