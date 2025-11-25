@@ -296,30 +296,51 @@ end
 ------------------------------------------------------
 
 function Scanner.BuildSnapshot()
-    local snapshot = {}
+    local snapshot    = {}
     local playerLevel = UnitLevel("player") or 0
-    local now = GetTime()
+    local now         = GetTime()
+
+    -- Always refresh live focus points before building snapshot
+    if UnitExists("target") then
+        Scanner:UpdateUnit("target")
+    end
+    if UnitExists("mouseover") then
+        Scanner:UpdateUnit("mouseover")
+    end
 
     for guid, data in pairs(Scanner.units) do
-        if not data.lastSeen or (now - data.lastSeen) > 30 then
+        -- Re-evaluate target/mouseover flags using *current* unit tokens
+        local unit = data.unit
+        local isTargetNow    = unit and UnitIsUnit(unit, "target")
+        local isMouseoverNow = unit and UnitIsUnit(unit, "mouseover")
+
+        data.isTarget    = isTargetNow
+        data.isMouseover = isMouseoverNow
+
+        -- Expire old entries, BUT never expire current target/mouseover on age alone
+        local tooOld = data.lastSeen and ((now - data.lastSeen) > 30)
+        if tooOld and not isTargetNow and not isMouseoverNow then
             Scanner.units[guid] = nil
         else
             local score = 0
 
-            if data.isTarget then score = score + 300 end
-            if data.isMouseover then score = score + 200 end
-
-            if data.hostile then score = score + 30 end
-            if data.isBoss then score = score + 40 end
-            if data.isElite then score = score + 15 end
-            if data.isCastingInterruptible then score = score + 20 end
-
-            if data.level > playerLevel + 2 then score = score + 5 end
-            if data.level < playerLevel - 3 then score = score - 5 end
+            if isTargetNow      then score = score + 300 end
+            if isMouseoverNow   then score = score + 200 end
+            if data.hostile     then score = score + 30  end
+            if data.isBoss      then score = score + 40  end
+            if data.isElite     then score = score + 15  end
+            if data.isCastingInterruptible then
+                score = score + 20
+            end
+            if data.level > playerLevel + 2 then
+                score = score + 5
+            elseif data.level < playerLevel - 3 then
+                score = score - 5
+            end
 
             table.insert(snapshot, {
                 guid  = guid,
-                unit  = data.unit,
+                unit  = unit,
                 score = score,
                 data  = data,
             })
@@ -332,6 +353,7 @@ function Scanner.BuildSnapshot()
 
     return snapshot
 end
+
 
 PE.LogInit(MODULE)
 if PE.RegisterModule then
