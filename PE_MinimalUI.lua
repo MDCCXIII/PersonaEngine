@@ -52,18 +52,36 @@ local function AllowedByPrefix(name)
 end
 
 local function IsAllowedFrame(frame)
-    if not frame or frame == UIParent or frame == WorldFrame then
+    if not frame then
         return true
+    end
+    -- Must be a real WoW frame object
+    if type(frame) ~= "table" or not frame.GetObjectType or frame:GetObjectType() ~= "Frame" then
+        return true -- non-frame UI children are ignored
+    end
+    -- Skip the big parents
+    if frame == UIParent or frame == WorldFrame then
+        return true
+    end
+    -- Must support GetName safely
+    if not frame.GetName then
+        return false
     end
     local name = frame:GetName()
     if not name then
         return false
     end
-    if ALLOWED[name] or AllowedByPrefix(name) then
+    -- Explicit allow list
+    if ALLOWED[name] then
+        return true
+    end
+    -- Prefix-based allow (TitanPanel)
+    if AllowedByPrefix(name) then
         return true
     end
     return false
 end
+
 
 ------------------------------------------------------
 -- FRAMES TO HIDE (explicit lists)
