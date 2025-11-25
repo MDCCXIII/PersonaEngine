@@ -19,7 +19,7 @@ local AR = PE.AR
 AR.HUD = AR.HUD or {}
 local HUD = AR.HUD
 
-local MAX_FRAMES = 2 -- target + mouseover max
+local MAX_FRAMES = 1 -- 1= only target HUD
 
 -- Set this to false if you ever want Blizzard nameplates visible again.
 local HIDE_BASE_NAMEPLATES = true
@@ -130,52 +130,60 @@ function HUD.Refresh(reason)
 
     local expanded = AR.IsExpanded and AR.IsExpanded()
 
-    -- Pick out just target and mouseover entries.
-    local targetEntry, mouseEntry
-	
-	for _, entry in ipairs(snapshot) do
-		if entry.isTarget and not targetEntry then
-			targetEntry = entry
-		elseif entry.isMouseover and not mouseEntry and not entry.isTarget then
-			-- avoid double-using same unit if mouseover == target
-			mouseEntry = entry
-		end
-	end
+    -- Pick out just the current target entry.
+    local targetEntry
+    for _, entry in ipairs(snapshot) do
+        if entry.isTarget then
+            targetEntry = entry
+            break
+        end
+    end
 
+    -- If no target in snapshot, hide all HUD frames.
+    if not targetEntry then
+        HUD.HideAll()
+        return
+    end
 
-    local ordered = {}
-    if targetEntry then table.insert(ordered, targetEntry) end
-    if mouseEntry then table.insert(ordered, mouseEntry) end
+    -- We only use frame #1 now (target only)
+    local ordered = { targetEntry }
 
-    -- frame1 = target, frame2 = mouseover
     for i = 1, MAX_FRAMES do
         local entry = ordered[i]
 
         local SkinNow = GetSkin()
-        local frame = SkinNow and SkinNow.GetFrame and SkinNow.GetFrame(i)
+        local frame   = SkinNow and SkinNow.GetFrame and SkinNow.GetFrame(i)
 
         if entry and frame then
-            local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(entry.unit)
-            local data  = entry.data
-            if plate and data then
-                HideBasePlateVisuals(plate)
-
-                local role = (i == 1) and "target" or "mouseover"
-                local ctx = {
-                    role      = role,
-                    isPrimary = (i == 1),
-                    expanded  = (role == "target") and expanded,
-                }
-
-                SkinNow.Apply(frame, plate, entry, ctx)
-            else
+            -- If the unit isn't visible (behind you / offscreen), hide this HUD
+            if not UnitIsVisible(entry.unit) then
                 if SkinNow.Hide then SkinNow.Hide(frame) end
+            else
+                local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(entry.unit)
+                local data  = entry.data
+
+                if plate and data then
+                    HideBasePlateVisuals(plate)
+
+                    local ctx = {
+                        role      = "target",
+                        isPrimary = true,
+                        expanded  = expanded,
+                    }
+
+                    SkinNow.Apply(frame, plate, entry, ctx)
+                else
+                    if SkinNow.Hide then SkinNow.Hide(frame) end
+                end
             end
+
         elseif frame and SkinNow and SkinNow.Hide then
             SkinNow.Hide(frame)
         end
     end
 end
+
+
 
 ----------------------------------------------------
 -- Module registration
