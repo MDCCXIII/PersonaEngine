@@ -8,9 +8,11 @@ local MODULE = "AR HUD"
 
 local PE = _G.PE
 if not PE then
+    print("|cffff0000[PersonaEngine] AR HUD: PE missing at load.|r")
     return
 end
 
+-- Make sure AR namespace exists even if ARCore hasn't run yet
 PE.AR = PE.AR or {}
 local AR = PE.AR
 
@@ -114,6 +116,7 @@ end
 
 function HUD.Refresh(reason)
     local Skin = GetSkin()
+
     if not (AR.IsEnabled and AR.IsEnabled()) or not Skin or not Skin.GetFrame then
         HUD.HideAll()
         return

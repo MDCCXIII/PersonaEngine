@@ -52,36 +52,35 @@ local function AllowedByPrefix(name)
 end
 
 local function IsAllowedFrame(frame)
-    -- ignore nil / core parents
-    if not frame or frame == UIParent or frame == WorldFrame then
+    if not frame then
         return true
     end
-    -- must at least be a table
+
+    -- Skip the big parents
+    if frame == UIParent or frame == WorldFrame then
+        return true
+    end
+
+    -- We only care about “real-ish” frame objects
     if type(frame) ~= "table" then
         return true
     end
-    -- must have GetName method
+
     if type(frame.GetName) ~= "function" then
         return false
     end
-    -- call GetName safely
+
     local ok, name = pcall(frame.GetName, frame)
     if not ok or not name then
         return false
     end
-    -- explicit allow list
-    if ALLOWED[name] then
+
+    if ALLOWED[name] or AllowedByPrefix(name) then
         return true
     end
-    -- TitanPanel prefixes
-    if AllowedByPrefix(name) then
-        return true
-    end
+
     return false
 end
-
-
-
 
 ------------------------------------------------------
 -- FRAMES TO HIDE (explicit lists)
@@ -197,6 +196,7 @@ local ADDON_ACTION_BARS = {
 local FRAMES_TO_HIDE = {}
 
 local function AddList(list)
+    if type(list) ~= "table" then return end
     for _, name in ipairs(list) do
         table.insert(FRAMES_TO_HIDE, name)
     end
@@ -222,22 +222,19 @@ local function AlphaHide(frame)
         return
     end
     if type(frame.GetAlpha) ~= "function" or type(frame.SetAlpha) ~= "function" then
-        -- Not a normal frame, or doesn't support alpha; skip it
         return
     end
 
-    -- Safely read current alpha
     if originalAlpha[frame] == nil then
         local ok, a = pcall(frame.GetAlpha, frame)
         if ok then
             originalAlpha[frame] = a or 1
         else
-            -- Frame freaked out when asked its alpha; don't touch it
+            -- Frame freaked out when asked its alpha; abort touching it
             return
         end
     end
 
-    -- Safely set alpha to 0
     pcall(frame.SetAlpha, frame, 0)
 end
 
@@ -251,23 +248,45 @@ local function AlphaShow(frame)
 
     local a = originalAlpha[frame]
     if a ~= nil then
-        -- Safely restore alpha
         pcall(frame.SetAlpha, frame, a)
         originalAlpha[frame] = nil
     else
-        -- No stored alpha, just make sure it's visible again
         pcall(frame.SetAlpha, frame, 1)
     end
 end
 
-
+-- Broad patterns to catch bar/pet/micro/button junk
 local function ShouldPatternHide(name)
-    if not name then return false end
-    for _, pat in ipairs(BAR_NAME_PATTERNS) do
+    if type(name) ~= "string" then
+        return false
+    end
+
+    -- Local patterns table, rebuilt per call (cheap, avoids BAR_NAME_PATTERNS=nil issues)
+    local patterns = {
+        "^BT4",              -- any Bartender frame or button
+        "ActionBar",         -- Blizzard action bar bits (containers)
+        "ActionButton",      -- individual action buttons (incl. bar 6)
+        "MultiBar",          -- multibar containers/buttons
+
+        "MicroMenu",         -- micro menu containers
+        "MicroButton",       -- individual micro buttons
+
+        "BagBar",            -- bag bar containers
+        "BagSlot",           -- individual bag slots
+        "BackpackButton",    -- any backpack button variants
+        "ReagentBag",        -- reagent bag slot/buttons
+
+        "Bar6",              -- anything explicitly tied to "bar 6"
+        "PetBar",            -- pet bar containers
+        "PetActionButton",   -- pet action buttons
+    }
+
+    for _, pat in ipairs(patterns) do
         if name:match(pat) then
             return true
         end
     end
+
     return false
 end
 
@@ -281,22 +300,28 @@ local function MarkFrame(frame, hidden)
 end
 
 local function ApplyHiddenState(hidden)
-    -- 1) Explicitly listed frames and pattern matches across _G
+    --------------------------------------------------
+    -- 1) Explicitly named frames
+    --------------------------------------------------
     for _, globalName in ipairs(FRAMES_TO_HIDE) do
         local frame = _G[globalName]
         MarkFrame(frame, hidden)
     end
 
+    --------------------------------------------------
+    -- 2) Pattern-based sweep across _G
+    --    (this nails bar 6, pet buttons, etc.)
+    --------------------------------------------------
     for name, frame in pairs(_G) do
-        if type(frame) == "table" and frame.GetObjectType then
-            if ShouldPatternHide(name) then
-                MarkFrame(frame, hidden)
-            end
+        if ShouldPatternHide(name) and type(frame) == "table" then
+            MarkFrame(frame, hidden)
         end
     end
 
-    -- 2) Sweep all top-level UIParent children:
+    --------------------------------------------------
+    -- 3) Top-level UIParent children:
     --    anything NOT in the allow list also gets alpha-hidden.
+    --------------------------------------------------
     local children = { UIParent:GetChildren() }
     for _, frame in ipairs(children) do
         if not IsAllowedFrame(frame) then
@@ -315,7 +340,7 @@ end
 ------------------------------------------------------
 MinimalUI.eventFrame = MinimalUI.eventFrame or CreateFrame("Frame")
 
-MinimalUI.eventFrame:SetScript("OnEvent", function(_, event, ...)
+MinimalUI.eventFrame:SetScript("OnEvent", function()
     -- Only do work while tactical mode is active
     if MinimalUI.hidden then
         ApplyHiddenState(true)
