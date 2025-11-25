@@ -42,7 +42,7 @@ PE_Slash.lua
 
 
 # AR HUD system
-AR/PE_ARCore.lua
-AR/PE_ARScanner.lua
-AR/UI/PE_UIARHUDSkin.lua
-AR/UI/PE_UIARHUD.lua
+AR\PE_ARCore.lua
+AR\PE_ARScanner.lua
+AR\UI\PE_UIARHUDSkin.lua
+AR\UI\PE_UIARHUD.lua
