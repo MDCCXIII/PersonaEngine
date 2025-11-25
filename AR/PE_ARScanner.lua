@@ -218,8 +218,8 @@ function Scanner:UpdateUnit(unitID)
     data.creature   = UnitCreatureType(unitID)
     data.faction    = UnitFactionGroup(unitID)
     data.isPet      = UnitIsUnit(unitID, "pet") or UnitIsOtherPlayersPet(unitID)
-    data.isTarget    = UnitIsUnit(unitID, "target")
-    data.isMouseover = UnitIsUnit(unitID, "mouseover")
+    --data.isTarget    = UnitIsUnit(unitID, "target")
+    --data.isMouseover = UnitIsUnit(unitID, "mouseover")
 
     data.isBoss  = (data.classif == "worldboss")
     data.isElite = (data.classif == "elite" or data.classif == "rareelite")
@@ -300,22 +300,16 @@ function Scanner.BuildSnapshot()
     local playerLevel = UnitLevel("player") or 0
     local now         = GetTime()
 
-    -- Always refresh live focus points before building snapshot
-    if UnitExists("target") then
-        Scanner:UpdateUnit("target")
-    end
-    if UnitExists("mouseover") then
-        Scanner:UpdateUnit("mouseover")
-    end
+    -- Who is actually target / mouseover *right now*?
+    local targetGUID = UnitExists("target")    and UnitGUID("target")    or nil
+    local mouseGUID  = UnitExists("mouseover") and UnitGUID("mouseover") or nil
 
     for guid, data in pairs(Scanner.units) do
-        local unit = data.unit
+        -- Fresh flags based on GUID, not cached booleans
+        local isTargetNow    = (targetGUID and guid == targetGUID)    or false
+        local isMouseoverNow = (mouseGUID  and guid == mouseGUID)     or false
 
-        -- Fresh, per-snapshot flags – do NOT trust old data.isTarget/isMouseover
-        local isTargetNow    = unit and UnitIsUnit(unit, "target")
-        local isMouseoverNow = unit and UnitIsUnit(unit, "mouseover")
-
-        -- Age-out, but never drop the *current* target/mouseover on age alone
+        -- Age-out, but never drop current target/mouseover just for being old
         local tooOld = data.lastSeen and ((now - data.lastSeen) > 30)
         if tooOld and not isTargetNow and not isMouseoverNow then
             Scanner.units[guid] = nil
@@ -337,12 +331,15 @@ function Scanner.BuildSnapshot()
             end
 
             table.insert(snapshot, {
-                guid       = guid,
-                unit       = unit,
-                data       = data,
-                isTarget   = isTargetNow,
-                isMouseover= isMouseoverNow,
-                score      = score,
+                guid        = guid,
+                data        = data,
+                -- force unit tokens for live focus points
+                unit        = isTargetNow and "target"
+                               or (isMouseoverNow and "mouseover"
+                                   or data.unit),
+                isTarget    = isTargetNow,
+                isMouseover = isMouseoverNow,
+                score       = score,
             })
         end
     end
@@ -353,6 +350,7 @@ function Scanner.BuildSnapshot()
 
     return snapshot
 end
+
 
 
 

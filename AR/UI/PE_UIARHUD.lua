@@ -132,11 +132,12 @@ function HUD.Refresh(reason)
 
     -- Pick out just target and mouseover entries.
     local targetEntry, mouseEntry
-
+	
 	for _, entry in ipairs(snapshot) do
 		if entry.isTarget and not targetEntry then
 			targetEntry = entry
 		elseif entry.isMouseover and not mouseEntry and not entry.isTarget then
+			-- avoid double-using same unit if mouseover == target
 			mouseEntry = entry
 		end
 	end
