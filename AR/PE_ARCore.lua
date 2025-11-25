@@ -11,8 +11,6 @@ if not PE or type(PE) ~= "table" then
     return
 end
 
-local MODULE = "ARCore"
-
 PE.AR = PE.AR or {}
 local AR = PE.AR
 
