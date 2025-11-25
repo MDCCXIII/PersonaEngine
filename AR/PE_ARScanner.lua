@@ -2,7 +2,7 @@
 -- AR/PE_ARScanner.lua
 -- Unit + tooltip scanner for AR HUD
 -- ##################################################
-
+local MODULE = "AR Scanner"
 local PE = PE
 local AR = PE and PE.AR
 if not AR then return end
@@ -267,3 +267,13 @@ function Scanner.BuildSnapshot()
 
     return snapshot
 end
+
+----------------------------------------------------
+-- Module registration
+----------------------------------------------------
+
+PE.LogInit(MODULE)
+PE.RegisterModule("AR Scanner", {
+    name  = "AR Scanner",
+    class = "AR HUD",
+})

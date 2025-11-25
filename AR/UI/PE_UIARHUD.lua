@@ -1,11 +1,9 @@
 -- ##################################################
 -- AR/UI/PE_UIARHUD.lua
--- Visual AR HUD renderer (rings, lines, etc.)
--- Hides Blizzard nameplate visuals while keeping
--- the underlying frames alive for anchoring.
--- Shows HUD ONLY for target and mouseover.
+-- AR HUD logic: decides *who* gets a HUD and *when*.
+-- All visuals delegated to AR.HUDSkin.
 -- ##################################################
-
+local MODULE = "AR HUD"
 local PE = PE
 local AR = PE and PE.AR
 if not AR then return end
@@ -13,47 +11,11 @@ if not AR then return end
 AR.HUD = AR.HUD or {}
 local HUD = AR.HUD
 
-local frames = {}
-local MAX_FRAMES = 2 -- target + mouseover max
+local Skin = AR.HUDSkin -- may be nil if skin file not loaded
+local MAX_FRAMES = 2    -- target + mouseover max
 
 -- Set this to false if you ever want Blizzard nameplates visible again.
 local HIDE_BASE_NAMEPLATES = true
-
-------------------------------------------------------
--- Frame factory
-------------------------------------------------------
-
-local function CreateARFrame(index)
-    local name = "PE_ARHUD_Frame" .. index
-    local f = CreateFrame("Frame", name, UIParent)
-    f.peIsARHUD = true -- mark so we don't hide ourselves
-    f:SetSize(140, 40)
-    f:Hide()
-
-    -- Simple “ring” texture approximating a cyber overlay.
-    -- You can later swap this to a custom texture in Media/.
-    local ring = f:CreateTexture(nil, "ARTWORK")
-    ring:SetAllPoints()
-    ring:SetTexture("Interface\\BUTTONS\\UI-Quickslot")
-    ring:SetAlpha(0.4)
-    f.ring = ring
-
-    -- Header above the ring (name)
-    local header = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    header:SetPoint("BOTTOM", f, "TOP", 0, 2)
-    header:SetJustifyH("CENTER")
-    header:SetText("")
-    f.header = header
-
-    -- Subline below (level / type)
-    local sub = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    sub:SetPoint("TOP", f, "BOTTOM", 0, -2)
-    sub:SetJustifyH("CENTER")
-    sub:SetText("")
-    f.sub = sub
-
-    return f
-end
 
 ------------------------------------------------------
 -- Nameplate hiding helpers
@@ -102,51 +64,11 @@ local function ApplyHideAllBaseNameplates()
 end
 
 ------------------------------------------------------
--- Small helpers for AR look
-------------------------------------------------------
-
-local function GetBaseColor(data, isPrimary)
-    -- Friendly / neutral / hostile coloring
-    local r, g, b = 0.3, 0.8, 1.0 -- default: soft cyan
-
-    if data.hostile then
-        r, g, b = 1.0, 0.2, 0.2
-    elseif not data.friendly then
-        r, g, b = 1.0, 0.8, 0.2
-    else
-        r, g, b = 0.2, 1.0, 0.4
-    end
-
-    if isPrimary then
-        g = math.min(1, g + 0.2)
-        b = math.min(1, b + 0.2)
-    end
-
-    return r, g, b
-end
-
-local function BuildCompactLine(data)
-    local level = data.level or "??"
-
-    if data.isPlayer then
-        return string.format("Lv%s Player", level)
-    end
-
-    local creature = data.creature or ""
-    return string.format("Lv%s %s", level, creature)
-end
-
-------------------------------------------------------
 -- HUD lifecycle
 ------------------------------------------------------
 
 function HUD.Init()
-    -- Create frames for target + mouseover
-    for i = 1, MAX_FRAMES do
-        frames[i] = CreateARFrame(i)
-    end
-
-    -- Ensure any existing plates are stripped when we log in / reload
+    -- Nothing to create here; frames come from HUDSkin
     ApplyHideAllBaseNameplates()
 
     -- Event-driven updates
@@ -167,8 +89,8 @@ function HUD.OnEvent(event, ...)
 end
 
 function HUD.HideAll()
-    for _, f in ipairs(frames) do
-        f:Hide()
+    if Skin and Skin.HideAll then
+        Skin.HideAll()
     end
 end
 
@@ -177,7 +99,7 @@ end
 ------------------------------------------------------
 
 function HUD.Refresh(reason)
-    if not AR.IsEnabled() then
+    if not AR.IsEnabled() or not Skin or not Skin.GetFrame then
         HUD.HideAll()
         return
     end
@@ -187,6 +109,8 @@ function HUD.Refresh(reason)
         HUD.HideAll()
         return
     end
+
+    local expanded = AR.IsExpanded and AR.IsExpanded()
 
     -- Pick out just target and mouseover entries.
     local targetEntry, mouseEntry
@@ -207,30 +131,40 @@ function HUD.Refresh(reason)
     if targetEntry then table.insert(ordered, targetEntry) end
     if mouseEntry then table.insert(ordered, mouseEntry) end
 
-    -- Draw them: frame1 = target, frame2 = mouseover
+    -- frame1 = target, frame2 = mouseover
     for i = 1, MAX_FRAMES do
-        local f = frames[i]
         local entry = ordered[i]
-        if f and entry then
+        local frame = Skin.GetFrame(i)
+
+        if entry and frame then
             local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(entry.unit)
             local data  = entry.data
             if plate and data then
                 HideBasePlateVisuals(plate)
 
-                f:SetParent(plate)
-                f:SetAllPoints(plate)
-                f:Show()
+                local role = (i == 1) and "target" or "mouseover"
+                local ctx = {
+                    role      = role,
+                    isPrimary = (i == 1),
+                    expanded  = (role == "target") and expanded,
+                }
 
-                local r, g, b = GetBaseColor(data, i == 1)
-                f.ring:SetVertexColor(r, g, b, 0.9)
-
-                f.header:SetText(data.name or "Unknown Target")
-                f.sub:SetText(BuildCompactLine(data) or "")
+                Skin.Apply(frame, plate, entry, ctx)
             else
-                f:Hide()
+                Skin.Hide(frame)
             end
-        elseif f then
-            f:Hide()
+        elseif frame then
+            Skin.Hide(frame)
         end
     end
 end
+
+----------------------------------------------------
+-- Module registration
+----------------------------------------------------
+
+PE.LogInit(MODULE)
+PE.RegisterModule("AR HUD", {
+    name  = "AR HUD",
+    class = "AR HUD",
+})

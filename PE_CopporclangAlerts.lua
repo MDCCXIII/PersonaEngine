@@ -261,4 +261,4 @@ SlashCmdList.PEMONGTEST = function()
     TriggerMongooseFullAlert()
 end
 
-print("|cff00ff00[PersonaEngine]|r Copporclang alerts module loaded.")
+print("|cff00ff00[PersonaEngine]|r Systems Initializing...")

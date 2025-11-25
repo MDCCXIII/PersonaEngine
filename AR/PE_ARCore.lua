@@ -3,7 +3,7 @@
 -- PersonaEngine: Augmented Reality HUD core
 -- Standalone-friendly, optional feature module.
 -- ##################################################
-
+local MODULE = "AR Core"
 local PE = PE
 if not PE or type(PE) ~= "table" then
     -- Allow clean removal / standalone experiments.
@@ -101,3 +101,13 @@ end
 
 -- Kick off
 CreateEventFrame()
+
+----------------------------------------------------
+-- Module registration
+----------------------------------------------------
+
+PE.LogInit(MODULE)
+PE.RegisterModule("AR Core", {
+    name  = "AR Core Systems",
+    class = "AR HUD",
+})

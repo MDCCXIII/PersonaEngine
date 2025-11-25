@@ -331,7 +331,6 @@ end
 if PE.RegisterModule then
     PE.RegisterModule(MODULE, {
         name  = "Action Resolver / DB",
-        class = "data",
-        notes = "Resolves spell / item / emote inputs and stores per-action configs.",
+        class = "data"
     })
 end
