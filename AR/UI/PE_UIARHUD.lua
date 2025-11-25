@@ -19,6 +19,10 @@ local AR = PE.AR
 AR.HUD = AR.HUD or {}
 local HUD = AR.HUD
 
+HUD.lastTargetGUID  = nil
+HUD.lastApplyTime   = 0
+HUD.hideGraceWindow = 0.2  -- seconds to wait before hiding on “no data”
+
 local MAX_FRAMES = 1 -- 1= only target HUD
 
 -- Set this to false if you ever want Blizzard nameplates visible again.
@@ -122,9 +126,14 @@ function HUD.Refresh(reason)
         return
     end
 
+    local now      = GetTime()
     local snapshot = AR.GetCurrentSnapshot and AR.GetCurrentSnapshot()
+
     if not snapshot or #snapshot == 0 then
-        HUD.HideAll()
+        -- No data right now; only hide if we’ve been “blind” for a bit
+        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
+            HUD.HideAll()
+        end
         return
     end
 
@@ -139,49 +148,54 @@ function HUD.Refresh(reason)
         end
     end
 
-    -- If no target in snapshot, hide all HUD frames.
     if not targetEntry then
-        HUD.HideAll()
+        -- No target in snapshot; again, be tolerant of short gaps
+        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
+            HUD.HideAll()
+        end
         return
     end
 
-    -- We only use frame #1 now (target only)
-    local ordered = { targetEntry }
+    -- Only one frame now: target
+    local SkinNow = GetSkin()
+    local frame   = SkinNow and SkinNow.GetFrame and SkinNow.GetFrame(1)
 
-    for i = 1, MAX_FRAMES do
-        local entry = ordered[i]
+    if not frame then
+        return
+    end
 
-        local SkinNow = GetSkin()
-        local frame   = SkinNow and SkinNow.GetFrame and SkinNow.GetFrame(i)
+    -- If unit isn’t visible, don’t instantly kill HUD unless it’s been a while
+    if not UnitIsVisible(targetEntry.unit) then
+        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
+            if SkinNow.Hide then SkinNow.Hide(frame) end
+        end
+        return
+    end
 
-        if entry and frame then
-            -- If the unit isn't visible (behind you / offscreen), hide this HUD
-            if not UnitIsVisible(entry.unit) then
-                if SkinNow.Hide then SkinNow.Hide(frame) end
-            else
-                local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(entry.unit)
-                local data  = entry.data
+    local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(targetEntry.unit)
+    local data  = targetEntry.data
 
-                if plate and data then
-                    HideBasePlateVisuals(plate)
+    if plate and data then
+        HideBasePlateVisuals(plate)
 
-                    local ctx = {
-                        role      = "target",
-                        isPrimary = true,
-                        expanded  = expanded,
-                    }
+        local ctx = {
+            role      = "target",
+            isPrimary = true,
+            expanded  = expanded,
+        }
 
-                    SkinNow.Apply(frame, plate, entry, ctx)
-                else
-                    if SkinNow.Hide then SkinNow.Hide(frame) end
-                end
-            end
+        SkinNow.Apply(frame, plate, targetEntry, ctx)
 
-        elseif frame and SkinNow and SkinNow.Hide then
-            SkinNow.Hide(frame)
+        HUD.lastTargetGUID = targetEntry.guid
+        HUD.lastApplyTime  = now
+    else
+        -- Same deal: only hide if it’s been bad for a bit
+        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
+            if SkinNow.Hide then SkinNow.Hide(frame) end
         end
     end
 end
+
 
 
 
