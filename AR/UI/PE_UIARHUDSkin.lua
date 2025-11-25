@@ -117,15 +117,16 @@ local function CreateARFrame(index)
     local name = "PE_ARHUD_Frame" .. index
     local f = CreateFrame("Frame", name, UIParent)
     f.peIsARHUD = true
-    f:SetSize(150, 120)
+    f:SetSize(140, 110)  -- a bit more compact
     f:Hide()
 
     --------------------------------------------------
     -- Central ring backing
     --------------------------------------------------
     local center = CreateFrame("Frame", nil, f)
-    center:SetSize(90, 90)
-    center:SetPoint("CENTER", f, "CENTER", 0, 6)
+	center:SetSize(80, 80)
+	-- move it *above* the nameplate center
+	center:SetPoint("CENTER", f, "CENTER", 0, 20)
     f.center = center
 
     local ring = center:CreateTexture(nil, "ARTWORK")
@@ -133,13 +134,21 @@ local function CreateARFrame(index)
     ring:SetTexture("Interface\\BUTTONS\\UI-Quickslot")
     ring:SetAlpha(0.25)
     f.ring = ring
+	
+	local inner = center:CreateTexture(nil, "ARTWORK")
+	inner:SetPoint("CENTER")
+	inner:SetSize(50, 50)
+	inner:SetTexture("Interface\\BUTTONS\\UI-Quickslot2")
+	inner:SetVertexColor(0, 1, 1, 0.25)  -- teal-ish glow
+	f.innerRing = inner
 
     --------------------------------------------------
     -- Left vertical bar (Health)
     --------------------------------------------------
     local healthBar = CreateFrame("StatusBar", nil, center)
-    healthBar:SetSize(14, 80)
-    healthBar:SetPoint("CENTER", center, "CENTER", -40, 0)
+    healthBar:SetSize(10, 70)
+	healthBar:ClearAllPoints()
+	healthBar:SetPoint("CENTER", center, "CENTER", -36, 0)
     healthBar:SetStatusBarTexture("Interface\\TARGETINGFRAME\\UI-StatusBar")
     healthBar:SetMinMaxValues(0, 1)
     healthBar:SetValue(1)
@@ -155,8 +164,9 @@ local function CreateARFrame(index)
     -- Right vertical bar (Power)
     --------------------------------------------------
     local powerBar = CreateFrame("StatusBar", nil, center)
-    powerBar:SetSize(14, 80)
-    powerBar:SetPoint("CENTER", center, "CENTER", 40, 0)
+    powerBar:SetSize(10, 70)
+	powerBar:ClearAllPoints()
+	powerBar:SetPoint("CENTER", center, "CENTER", 36, 0)
     powerBar:SetStatusBarTexture("Interface\\TARGETINGFRAME\\UI-StatusBar")
     powerBar:SetMinMaxValues(0, 1)
     powerBar:SetValue(1)
@@ -284,6 +294,24 @@ function Skin.Apply(frame, plate, entry, ctx)
     else
         frame.threatGlow:SetAlpha(0)
     end
+	
+	local r, g, b = 0.3, 0.8, 1.0 -- default cyan
+
+	if data.hostile then
+		r, g, b = 1.0, 0.2, 0.2
+	elseif not data.friendly then
+		r, g, b = 1.0, 0.8, 0.2
+	else
+		r, g, b = 0.2, 1.0, 0.4
+	end
+
+	-- Casting: override with bright “danger” yellow
+	if data.isCastingInterruptible then
+		r, g, b = 1.0, 1.0, 0.2
+	end
+
+	frame.ring:SetVertexColor(r, g, b, 0.35)
+
 
     --------------------------------------------------
     -- Name + compact info (left)
@@ -295,14 +323,17 @@ function Skin.Apply(frame, plate, entry, ctx)
     -- Detail text (right) – only for target + expanded
     --------------------------------------------------
     if ctx.role == "target" and ctx.expanded then
-        frame.detailText:SetText(BuildDetailText(data) or "")
-        frame.rightLine:Show()
-        frame.rightElbow:Show()
-    else
-        frame.detailText:SetText("")
-        frame.rightLine:Hide()
-        frame.rightElbow:Hide()
-    end
+		frame.detailText:SetText(BuildDetailText(data) or "")
+		frame.rightLine:Show()
+		frame.rightElbow:Show()
+		frame.innerRing:SetVertexColor(0.2, 0.8, 1.0, 0.45) -- brighter inner ring
+	else
+		frame.detailText:SetText("")
+		frame.rightLine:Hide()
+		frame.rightElbow:Hide()
+		frame.innerRing:SetVertexColor(0, 1, 1, 0.25) -- dimmer
+	end
+
 
     --------------------------------------------------
     -- Basic ring tint: hostile/friendly and casting

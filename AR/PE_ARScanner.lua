@@ -111,6 +111,11 @@ end
 ------------------------------------------------------
 
 local function CountBuffs(unit)
+    -- Some environments may not expose UnitBuff
+    if type(UnitBuff) ~= "function" then
+        return 0
+    end
+
     local count = 0
     for i = 1, 40 do
         local name = UnitBuff(unit, i)
@@ -121,6 +126,11 @@ local function CountBuffs(unit)
 end
 
 local function CountDebuffs(unit)
+    -- Some environments may not expose UnitDebuff
+    if type(UnitDebuff) ~= "function" then
+        return 0
+    end
+
     local count = 0
     for i = 1, 40 do
         local name = UnitDebuff(unit, i)
@@ -129,6 +139,7 @@ local function CountDebuffs(unit)
     end
     return count
 end
+
 
 ------------------------------------------------------
 -- Scanner lifecycle
@@ -228,12 +239,24 @@ function Scanner:UpdateUnit(unitID)
     --------------------------------------------------
     -- Threat / PvP / flags
     --------------------------------------------------
-    data.threat        = UnitThreatSituation("player", unitID)
-    data.isPVP         = UnitIsPVP(unitID)
-    data.isPVPFFA      = UnitIsPVPFreeForAll(unitID)
-    data.isTapDenied   = UnitIsTapDenied(unitID)
-    data.isCivilian    = UnitIsCivilian(unitID)
-    data.isBattlePet   = UnitIsWildBattlePet(unitID)
+    data.threat      = UnitThreatSituation("player", unitID)
+    data.isPVP       = UnitIsPVP(unitID)
+    data.isPVPFFA    = UnitIsPVPFreeForAll(unitID)
+    data.isTapDenied = UnitIsTapDenied(unitID)
+
+    -- Optional APIs (not present on all clients)
+    if type(UnitIsCivilian) == "function" then
+        data.isCivilian = UnitIsCivilian(unitID)
+    else
+        data.isCivilian = false
+    end
+
+    if type(UnitIsWildBattlePet) == "function" then
+        data.isBattlePet = UnitIsWildBattlePet(unitID)
+    else
+        data.isBattlePet = false
+    end
+
 
     --------------------------------------------------
     -- Auras (summary only)

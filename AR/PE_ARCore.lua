@@ -26,11 +26,15 @@ AR.expanded    = false  -- compact vs expanded HUD
 -- Local helpers
 ------------------------------------------------------
 
-local function SafeCall(fn, ...)
-    if type(fn) == "function" then
-        return pcall(fn, ...)
+--ScreamCall
+local function SafeCall(fn, ...) 
+    if type(fn) ~= "function" then return end
+    local ok, err = pcall(fn, ...)
+    if not ok and geterrorhandler then
+        geterrorhandler()(err)
     end
 end
+
 
 ------------------------------------------------------
 -- Public API
