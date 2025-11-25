@@ -41,7 +41,7 @@ PE_CopporclangAlerts.lua
 PE_Slash.lua
 
 
-# AR HUD module
+# AR HUD system
 AR/PE_ARCore.lua
 AR/PE_ARScanner.lua
 AR/UI/PE_UIARHUDSkin.lua

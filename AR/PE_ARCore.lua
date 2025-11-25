@@ -4,7 +4,7 @@
 -- Standalone-friendly, optional feature module.
 -- ##################################################
 local MODULE = "AR Core"
-local PE = PE
+local PE = _G.PE
 if not PE or type(PE) ~= "table" then
     -- Allow clean removal / standalone experiments.
     return

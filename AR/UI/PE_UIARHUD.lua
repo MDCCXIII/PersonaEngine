@@ -4,7 +4,7 @@
 -- All visuals delegated to AR.HUDSkin.
 -- ##################################################
 local MODULE = "AR HUD"
-local PE = PE
+local PE = _G.PE
 local AR = PE and PE.AR
 if not AR then return end
 

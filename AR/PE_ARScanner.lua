@@ -1,9 +1,11 @@
 -- ##################################################
 -- AR/PE_ARScanner.lua
 -- Unit + tooltip scanner for AR HUD
+-- Enriched data model: health, power, threat, PVP,
+-- tap denied, civilians, auras, distance, range, etc.
 -- ##################################################
-local MODULE = "AR Scanner"
-local PE = PE
+
+local PE = _G.PE
 local AR = PE and PE.AR
 if not AR then return end
 
@@ -14,15 +16,13 @@ Scanner.units   = Scanner.units or {}
 Scanner.tooltip = Scanner.tooltip or nil
 
 ------------------------------------------------------
--- Internal helpers
+-- Tooltip helper
 ------------------------------------------------------
 
 local function EnsureTooltip()
     if Scanner.tooltip then
         return Scanner.tooltip
     end
-
-    -- Hidden tooltip we can scrape safely
     local tt = CreateFrame("GameTooltip", "PE_ARHiddenTooltip", UIParent, "GameTooltipTemplate")
     tt:SetOwner(UIParent, "ANCHOR_NONE")
     Scanner.tooltip = tt
@@ -47,7 +47,6 @@ local function BuildTooltipForUnit(unitID, data)
         },
     }
 
-    -- Read first few lines off our hidden tooltip
     for i = 1, 6 do
         local fs = _G["PE_ARHiddenTooltipTextLeft" .. i]
         local text = fs and fs:GetText()
@@ -58,17 +57,9 @@ local function BuildTooltipForUnit(unitID, data)
                 tooltip.subHeader = text
             else
                 table.insert(tooltip.lines, text)
-
-                -- Very crude tag inference, we can refine later.
-                if text:find("Quest", 1, true) then
-                    tooltip.tags.isQuestGiver = true
-                end
-                if text:find("Vendor", 1, true) or text:find("Merchant", 1, true) then
-                    tooltip.tags.isVendor = true
-                end
-                if text:find("Trainer", 1, true) then
-                    tooltip.tags.isTrainer = true
-                end
+                if text:find("Quest") then tooltip.tags.isQuestGiver = true end
+                if text:find("Vendor") or text:find("Merchant") then tooltip.tags.isVendor = true end
+                if text:find("Trainer") then tooltip.tags.isTrainer = true end
             end
         end
     end
@@ -76,10 +67,14 @@ local function BuildTooltipForUnit(unitID, data)
     return tooltip
 end
 
+------------------------------------------------------
+-- Casting helper
+------------------------------------------------------
+
 local function UpdateCastInfo(unitID, data)
-    local name, _, _, startTime, endTime, _, _, notInterruptible = UnitCastingInfo(unitID)
+    local name, _, _, _, endTime, _, _, notInterruptible = UnitCastingInfo(unitID)
     if not name then
-        name, _, _, startTime, endTime, _, notInterruptible = UnitChannelInfo(unitID)
+        name, _, _, _, endTime, _, notInterruptible = UnitChannelInfo(unitID)
     end
 
     if name then
@@ -98,11 +93,47 @@ local function UpdateCastInfo(unitID, data)
 end
 
 ------------------------------------------------------
+-- Range / distance helpers (cheap approximations)
+------------------------------------------------------
+
+local function EstimateDistance(unitID)
+    -- Uses UnitPosition() which works anywhere except some instances
+    local px, py = UnitPosition("player")
+    local ux, uy = UnitPosition(unitID)
+    if not px or not ux then return nil end
+    local dx, dy = ux - px, uy - py
+    return math.sqrt(dx*dx + dy*dy)
+end
+
+------------------------------------------------------
+-- Aura helpers (lightweight summaries)
+------------------------------------------------------
+
+local function CountBuffs(unit)
+    local count = 0
+    for i = 1, 40 do
+        local name = UnitBuff(unit, i)
+        if not name then break end
+        count = count + 1
+    end
+    return count
+end
+
+local function CountDebuffs(unit)
+    local count = 0
+    for i = 1, 40 do
+        local name = UnitDebuff(unit, i)
+        if not name then break end
+        count = count + 1
+    end
+    return count
+end
+
+------------------------------------------------------
 -- Scanner lifecycle
 ------------------------------------------------------
 
 function Scanner.Init()
-    -- Register events through the core so we don’t create extra frames
     AR.RegisterEvent("PLAYER_TARGET_CHANGED")
     AR.RegisterEvent("UPDATE_MOUSEOVER_UNIT")
     AR.RegisterEvent("NAME_PLATE_UNIT_ADDED")
@@ -122,87 +153,107 @@ function Scanner.OnEvent(event, ...)
         Scanner:UpdateUnit("target")
 
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
-        if UnitExists("mouseover") then
-            Scanner:UpdateUnit("mouseover")
-        end
+        if UnitExists("mouseover") then Scanner:UpdateUnit("mouseover") end
 
     elseif event == "NAME_PLATE_UNIT_ADDED" then
-        local unit = ...
-        Scanner:UpdateUnit(unit)
+        Scanner:UpdateUnit(...)
 
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
-        local unit = ...
-        Scanner:RemoveUnit(unit)
+        Scanner:RemoveUnit(...)
 
     elseif event == "MODIFIER_STATE_CHANGED" then
         local key, down = ...
         if key == "LALT" or key == "RALT" or key == "ALT" then
-            local was = AR.expanded
             AR.expanded = (down == 1) or IsAltKeyDown()
-            if was ~= AR.expanded and AR.HUD and AR.HUD.Refresh then
-                AR.HUD.Refresh("MODIFIER_STATE_CHANGED")
-            end
+            if AR.HUD and AR.HUD.Refresh then AR.HUD.Refresh("MODIFIER") end
         end
 
-    elseif event == "UNIT_FACTION" or event == "UNIT_FLAGS" or event == "UNIT_THREAT_LIST_UPDATE" then
-        local unit = ...
-        if unit and UnitGUID(unit) then
-            Scanner:UpdateUnit(unit)
-        end
+    elseif event:find("UNIT_SPELLCAST") then
+        Scanner:UpdateUnit(...)
 
-    elseif event == "UNIT_SPELLCAST_START"
-        or event == "UNIT_SPELLCAST_STOP"
-        or event == "UNIT_SPELLCAST_CHANNEL_START"
-        or event == "UNIT_SPELLCAST_CHANNEL_STOP"
+    elseif event == "UNIT_THREAT_LIST_UPDATE"
+        or event == "UNIT_FACTION"
+        or event == "UNIT_FLAGS"
     then
-        local unit = ...
-        if unit and UnitGUID(unit) then
-            Scanner:UpdateUnit(unit)
-        end
+        Scanner:UpdateUnit(...)
     end
 end
 
 ------------------------------------------------------
--- Unit tracking
+-- Main unit update
 ------------------------------------------------------
 
 function Scanner:UpdateUnit(unitID)
-    if not unitID or not UnitExists(unitID) then
-        return
-    end
+    if not unitID or not UnitExists(unitID) then return end
 
     local guid = UnitGUID(unitID)
-    if not guid then
-        return
-    end
+    if not guid then return end
 
     local data = Scanner.units[guid] or {}
 
-    data.unit   = unitID
-    data.guid   = guid
-    data.name   = UnitName(unitID)
-    data.level  = UnitLevel(unitID)
-
-    data.isPlayer   = UnitIsPlayer(unitID) or false
-    data.hostile    = UnitIsEnemy("player", unitID) or false
-    data.friendly   = UnitIsFriend("player", unitID) or false
-    data.reaction   = UnitReaction("player", unitID) or 4
-    data.classif    = UnitClassification(unitID) or "normal"
+    --------------------------------------------------
+    -- Identity & classification
+    --------------------------------------------------
+    data.unit       = unitID
+    data.guid       = guid
+    data.name       = UnitName(unitID)
+    data.level      = UnitLevel(unitID)
+    data.isPlayer   = UnitIsPlayer(unitID)
+    data.hostile    = UnitIsEnemy("player", unitID)
+    data.friendly   = UnitIsFriend("player", unitID)
+    data.reaction   = UnitReaction("player", unitID)
+    data.classif    = UnitClassification(unitID)
     data.creature   = UnitCreatureType(unitID)
     data.faction    = UnitFactionGroup(unitID)
-    data.isPet      = UnitIsUnit(unitID, "pet") or UnitIsOtherPlayersPet(unitID) or false
+    data.isPet      = UnitIsUnit(unitID, "pet") or UnitIsOtherPlayersPet(unitID)
+    data.isTarget    = UnitIsUnit(unitID, "target")
+    data.isMouseover = UnitIsUnit(unitID, "mouseover")
 
-    data.isTarget    = UnitIsUnit(unitID, "target") or false
-    data.isMouseover = UnitIsUnit(unitID, "mouseover") or false
-
-    -- Boss / elite flags
     data.isBoss  = (data.classif == "worldboss")
     data.isElite = (data.classif == "elite" or data.classif == "rareelite")
 
-    -- Casting info
+    --------------------------------------------------
+    -- Health & power
+    --------------------------------------------------
+    data.health    = UnitHealth(unitID)
+    data.healthMax = UnitHealthMax(unitID)
+    data.hpPct     = (data.healthMax > 0) and (data.health / data.healthMax) or 0
+
+    data.power    = UnitPower(unitID)
+    data.powerMax = UnitPowerMax(unitID)
+    data.powerType = select(2, UnitPowerType(unitID))
+    data.powerPct = (data.powerMax > 0) and (data.power / data.powerMax) or 0
+
+    --------------------------------------------------
+    -- Threat / PvP / flags
+    --------------------------------------------------
+    data.threat        = UnitThreatSituation("player", unitID)
+    data.isPVP         = UnitIsPVP(unitID)
+    data.isPVPFFA      = UnitIsPVPFreeForAll(unitID)
+    data.isTapDenied   = UnitIsTapDenied(unitID)
+    data.isCivilian    = UnitIsCivilian(unitID)
+    data.isBattlePet   = UnitIsWildBattlePet(unitID)
+
+    --------------------------------------------------
+    -- Auras (summary only)
+    --------------------------------------------------
+    data.buffCount   = CountBuffs(unitID)
+    data.debuffCount = CountDebuffs(unitID)
+
+    --------------------------------------------------
+    -- Distance & range
+    --------------------------------------------------
+    data.distance = EstimateDistance(unitID)
+    data.inRange  = UnitInRange(unitID) -- nil/true/false
+
+    --------------------------------------------------
+    -- Casting
+    --------------------------------------------------
     UpdateCastInfo(unitID, data)
 
-    -- Tooltip snapshot
+    --------------------------------------------------
+    -- Tooltip
+    --------------------------------------------------
     data.tooltip  = BuildTooltipForUnit(unitID, data)
     data.lastSeen = GetTime()
 
@@ -210,7 +261,6 @@ function Scanner:UpdateUnit(unitID)
 end
 
 function Scanner:RemoveUnit(unitID)
-    if not unitID then return end
     local guid = UnitGUID(unitID)
     if guid then
         Scanner.units[guid] = nil
@@ -218,39 +268,30 @@ function Scanner:RemoveUnit(unitID)
 end
 
 ------------------------------------------------------
--- Snapshot for HUD
+-- Snapshot (priority sort)
 ------------------------------------------------------
 
 function Scanner.BuildSnapshot()
-    -- Return a simple sorted list for HUD.
     local snapshot = {}
     local playerLevel = UnitLevel("player") or 0
     local now = GetTime()
 
     for guid, data in pairs(Scanner.units) do
-        -- prune very old entries
-        if data.lastSeen and (now - data.lastSeen) > 30 then
+        if not data.lastSeen or (now - data.lastSeen) > 30 then
             Scanner.units[guid] = nil
         else
             local score = 0
 
-            -- hard priority: target > mouseover > others
-            if data.isTarget then
-                score = score + 300
-            elseif data.isMouseover then
-                score = score + 200
-            end
+            if data.isTarget then score = score + 300 end
+            if data.isMouseover then score = score + 200 end
 
             if data.hostile then score = score + 30 end
             if data.isBoss then score = score + 40 end
             if data.isElite then score = score + 15 end
             if data.isCastingInterruptible then score = score + 20 end
 
-            if data.level and data.level > playerLevel + 2 then
-                score = score + 5
-            elseif data.level and data.level < playerLevel - 3 then
-                score = score - 5
-            end
+            if data.level > playerLevel + 2 then score = score + 5 end
+            if data.level < playerLevel - 3 then score = score - 5 end
 
             table.insert(snapshot, {
                 guid  = guid,
@@ -267,13 +308,3 @@ function Scanner.BuildSnapshot()
 
     return snapshot
 end
-
-----------------------------------------------------
--- Module registration
-----------------------------------------------------
-
-PE.LogInit(MODULE)
-PE.RegisterModule("AR Scanner", {
-    name  = "AR Scanner",
-    class = "AR HUD",
-})
