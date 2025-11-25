@@ -52,27 +52,34 @@ local function AllowedByPrefix(name)
 end
 
 local function IsAllowedFrame(frame)
-    -- Ignore nil / core parents
+    -- ignore nil / core parents
     if not frame or frame == UIParent or frame == WorldFrame then
         return true
     end
-    -- Only deal with real tables that at least look like frames
+    -- must at least be a table
     if type(frame) ~= "table" then
         return true
     end
-    -- Some Blizzard objects don't implement GetName safely
+    -- must have GetName method
     if type(frame.GetName) ~= "function" then
         return false
     end
-    local name = frame:GetName()
-    if not name then
+    -- call GetName safely
+    local ok, name = pcall(frame.GetName, frame)
+    if not ok or not name then
         return false
     end
-    if ALLOWED[name] or AllowedByPrefix(name) then
+    -- explicit allow list
+    if ALLOWED[name] then
+        return true
+    end
+    -- TitanPanel prefixes
+    if AllowedByPrefix(name) then
         return true
     end
     return false
 end
+
 
 
 
