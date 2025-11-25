@@ -118,6 +118,8 @@ local function CreateARFrame(index)
     local f = CreateFrame("Frame", name, UIParent)
     f.peIsARHUD = true
     f:SetSize(130, 100)  -- a bit more compact
+	f:SetIgnoreParentAlpha(true)  -- <== key lines
+    f:SetIgnoreParentScale(true)  -- <== key lines
     f:Hide()
 
     --------------------------------------------------
@@ -361,6 +363,7 @@ function Skin.Apply(frame, plate, entry, ctx)
 	local dist = data.distance or 10
 	local scale = math.max(0.7, math.min(1.2, 1.2 - (dist * 0.03)))
 	frame:SetScale(scale)
+	frame:SetAlpha(1)   -- force full visibility for HUD
 
     frame:Show()
 end
