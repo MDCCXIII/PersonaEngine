@@ -126,37 +126,35 @@ function HUD.Refresh(reason)
         return
     end
 
-    local now      = GetTime()
-    local snapshot = AR.GetCurrentSnapshot and AR.GetCurrentSnapshot()
+    -- If we don't even have a target, no HUD.
+    if not UnitExists("target") then
+        HUD.HideAll()
+        return
+    end
 
-    if not snapshot or #snapshot == 0 then
-        -- No data right now; only hide if we’ve been “blind” for a bit
-        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
-            HUD.HideAll()
+    local snapshot = AR.GetCurrentSnapshot and AR.GetCurrentSnapshot()
+    local targetGUID = UnitGUID("target")
+
+    -- Try to find the snapshot entry for our current target.
+    local targetEntry = nil
+    if snapshot and #snapshot > 0 and targetGUID then
+        for _, entry in ipairs(snapshot) do
+            if entry.guid == targetGUID then
+                targetEntry = entry
+                break
+            end
         end
+    end
+
+    -- If scanner didn't give us anything yet, just bail quietly this tick
+    -- without hiding. Next tick will likely catch up.
+    if not targetEntry then
         return
     end
 
     local expanded = AR.IsExpanded and AR.IsExpanded()
 
-    -- Pick out just the current target entry.
-    local targetEntry
-    for _, entry in ipairs(snapshot) do
-        if entry.isTarget then
-            targetEntry = entry
-            break
-        end
-    end
-
-    if not targetEntry then
-        -- No target in snapshot; again, be tolerant of short gaps
-        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
-            HUD.HideAll()
-        end
-        return
-    end
-
-    -- Only one frame now: target
+    -- Single HUD frame for target only
     local SkinNow = GetSkin()
     local frame   = SkinNow and SkinNow.GetFrame and SkinNow.GetFrame(1)
 
@@ -164,37 +162,26 @@ function HUD.Refresh(reason)
         return
     end
 
-    -- If unit isn’t visible, don’t instantly kill HUD unless it’s been a while
-    if not UnitIsVisible(targetEntry.unit) then
-        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
-            if SkinNow.Hide then SkinNow.Hide(frame) end
-        end
+    local unit  = "target"               -- FORCE: always use real target unit
+    local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(unit)
+    local data  = targetEntry.data
+
+    -- If we can't find a plate or data, don't spam hide/show: just skip this tick.
+    if not (plate and data) then
         return
     end
 
-    local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit(targetEntry.unit)
-    local data  = targetEntry.data
+    HideBasePlateVisuals(plate)
 
-    if plate and data then
-        HideBasePlateVisuals(plate)
+    local ctx = {
+        role      = "target",
+        isPrimary = true,
+        expanded  = expanded,
+    }
 
-        local ctx = {
-            role      = "target",
-            isPrimary = true,
-            expanded  = expanded,
-        }
-
-        SkinNow.Apply(frame, plate, targetEntry, ctx)
-
-        HUD.lastTargetGUID = targetEntry.guid
-        HUD.lastApplyTime  = now
-    else
-        -- Same deal: only hide if it’s been bad for a bit
-        if (now - HUD.lastApplyTime) > HUD.hideGraceWindow then
-            if SkinNow.Hide then SkinNow.Hide(frame) end
-        end
-    end
+    SkinNow.Apply(frame, plate, targetEntry, ctx)
 end
+
 
 
 
