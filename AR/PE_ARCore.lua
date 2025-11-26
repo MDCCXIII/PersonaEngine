@@ -77,9 +77,6 @@ local preservedNames = {
 
 	-- Titan Panel (your bar name + any TitanPanel* stuff)
 	"Titan",
-	
-	-- tooltips / dropdowns generally
-    "Tooltip",
 
 	-- common UI panels/menus
 	"^GameMenuFrame$",
@@ -91,15 +88,12 @@ local preservedNames = {
 	"^PVEFrame$",
 
 	-- addons
-	"^PersonaEngine*#",
+	"^PersonaEngine",
 	"^TomTomBlock$",
 }
 
 local deniedNames = {
-    "^GameTooltip",     -- blocks GameTooltip, GameTooltipTextLeft1, etc.
-    "^ItemRefTooltip",  -- optional – stops item link static tooltips
-	"^HUDTooltip",
-	"^HUD_Tooltip",
+    "Tooltip",     -- blocks GameTooltip, GameTooltipTextLeft1, etc.
 }
 
 local function NameMatchesPreserved(name)

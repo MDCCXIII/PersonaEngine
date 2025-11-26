@@ -4,7 +4,7 @@
 -- ##################################################
 
 local MODULE = "UI_ARHUDTooltips"
-local PE     = PE
+local PE     = _G.PE
 if not PE or type(PE) ~= "table" then
     print("|cffff0000[PersonaEngine] ERROR: PE table missing in " .. MODULE .. "|r")
     return
