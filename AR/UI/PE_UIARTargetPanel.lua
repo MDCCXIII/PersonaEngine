@@ -240,6 +240,10 @@ local function CreatePanelFrame()
 
     local f = CreateFrame("Frame", "PE_AR_TargetPanel", UIParent)
     Panel.frame = f
+	
+	-- Copporclang visor: ignore global UI fades
+    f:SetIgnoreParentAlpha(true)
+    f:SetIgnoreParentScale(true)
 
     -- Taller dossier-style card
     f:SetSize(260, 300)
