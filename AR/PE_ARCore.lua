@@ -95,14 +95,29 @@ local preservedNames = {
 	"^TomTomBlock$",
 }
 
+local deniedNames = {
+    "^GameTooltip",     -- blocks GameTooltip, GameTooltipTextLeft1, etc.
+    "^ItemRefTooltip",  -- optional – stops item link static tooltips
+	"^HUDTooltip",
+	"^HUD_Tooltip",
+}
+
 local function NameMatchesPreserved(name)
-	if not name then return false end
-	for _, pattern in ipairs(preservedNames) do
-		if name:match(pattern) then
-			return true
-		end
-	end
-	return false
+	-- deny first
+    for _, pat in ipairs(deniedNames) do
+        if name:match(pat) then
+            return false
+        end
+    end
+
+    -- allow second
+    for _, pat in ipairs(preservedNames) do
+        if name:match(pat) then
+            return true
+        end
+    end
+
+    return false
 end
 
 local function IsFrameObject(f)
