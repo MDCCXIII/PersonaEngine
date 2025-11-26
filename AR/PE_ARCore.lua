@@ -281,9 +281,10 @@ function AR.ToggleFullHUD()
 
     -- If we’re entering visor mode, make sure AR core bits are ready.
     if entering and not AR.initialized then
-        SafeCall(AR.Scanner and AR.Scanner.Init)
-        SafeCall(AR.HUD     and AR.HUD.Init)
+        SafeCall(AR.Scanner     and AR.Scanner.Init)
+        SafeCall(AR.HUD         and AR.HUD.Init)
         SafeCall(AR.TargetPanel and AR.TargetPanel.Init)
+        SafeCall(AR.Tooltips    and AR.Tooltips.Init)
         AR.initialized = true
     end
 
@@ -293,7 +294,12 @@ function AR.ToggleFullHUD()
     if AR.TargetPanel and AR.TargetPanel.ForceUpdate then
         SafeCall(AR.TargetPanel.ForceUpdate)
     end
+
+    if AR.Tooltips and AR.Tooltips.OnARModeChanged then
+        SafeCall(AR.Tooltips.OnARModeChanged)
+    end
 end
+
 
 
 ------------------------------------------------------
@@ -311,6 +317,8 @@ local function OnEvent(self, event, ...)
         SafeCall(AR.HUD     and AR.HUD.Init)
         -- Also make sure the AR Target Panel is initialized
         SafeCall(AR.TargetPanel and AR.TargetPanel.Init)
+		SafeCall(AR.Tooltips    and AR.Tooltips.Init)
+
 
         AR.initialized = true
     end
