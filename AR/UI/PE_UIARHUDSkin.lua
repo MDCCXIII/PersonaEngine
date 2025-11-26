@@ -265,7 +265,7 @@ function Skin.Apply(frame, plate, entry, ctx)
     if not frame or not plate or not data then
         return
     end
-	UIFrameFadeIn(frame, 0.15, 0, 1)
+	--UIFrameFadeIn(frame, 0.15, 0, 1)
 
     frame:SetParent(plate)
     frame:SetAllPoints(plate)
@@ -370,7 +370,7 @@ end
 
 function Skin.Hide(frame)
     if frame then
-		UIFrameFadeOut(frame, 0.15, 1, 0)
+		--UIFrameFadeOut(frame, 0.15, 1, 0)
         frame:Hide()
     end
 end
